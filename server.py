@@ -28,7 +28,10 @@ def load_config():
         "adminPassword": "",
         "pollingInterval": 3000,
         "maxPollingRetries": 200,
-        "cards": []
+        "cards": [],
+        "aiBaseUrl": "",
+        "aiApiKey": "",
+        "aiModel": ""
     }
     if CONFIG_PATH.exists():
         try:
@@ -66,6 +69,18 @@ def load_config():
             config["pollingInterval"] = int(env_polling)
         except ValueError:
             pass
+
+    env_ai_base = os.environ.get("AI_BASE_URL")
+    if env_ai_base:
+        config["aiBaseUrl"] = env_ai_base
+
+    env_ai_key = os.environ.get("AI_API_KEY")
+    if env_ai_key:
+        config["aiApiKey"] = env_ai_key
+
+    env_ai_model = os.environ.get("AI_MODEL")
+    if env_ai_model:
+        config["aiModel"] = env_ai_model
 
     return config
 
@@ -142,6 +157,20 @@ class GeminiChatRequest(BaseModel):
     message: str
     history: list = []   # [{role: "user"|"model", text: "..."}]
     context: dict = {}   # {cards, currentCard, nodeInfoList}
+
+class AIChatRequest(BaseModel):
+    message: str
+    history: list = []
+    context: dict = {}
+
+class AIConfigRequest(BaseModel):
+    aiBaseUrl: str = ""
+    aiApiKey: str = ""
+    aiModel: str = ""
+
+class AIModelsRequest(BaseModel):
+    aiBaseUrl: str
+    aiApiKey: str = ""
 
 
 # ===== 管理員認證端點 =====
@@ -369,6 +398,128 @@ async def proxy_gemini(req: GeminiChatRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Gemini 請求失敗: {str(e)}")
+
+
+# ===== AI 設定管理端點 =====
+
+@app.get("/api/admin/ai-config")
+async def get_ai_config(request: Request):
+    """取得 AI 設定（管理員）"""
+    require_admin(request)
+    return {
+        "aiBaseUrl": config.get("aiBaseUrl", ""),
+        "aiModel": config.get("aiModel", ""),
+        "hasApiKey": bool(config.get("aiApiKey", ""))
+    }
+
+@app.post("/api/admin/ai-config")
+async def save_ai_config(req: AIConfigRequest, request: Request):
+    """儲存 AI 設定（管理員）"""
+    require_admin(request)
+    config["aiBaseUrl"] = req.aiBaseUrl.strip()
+    if req.aiApiKey.strip():
+        config["aiApiKey"] = req.aiApiKey.strip()
+    config["aiModel"] = req.aiModel.strip()
+    save_config_to_disk()
+    return {"success": True}
+
+@app.post("/api/admin/ai-models")
+async def fetch_ai_models(req: AIModelsRequest, request: Request):
+    """代理：從 OpenAI 格式端點拉取模型列表（管理員）"""
+    require_admin(request)
+    base_url = req.aiBaseUrl.rstrip("/")
+    api_key = req.aiApiKey.strip() or config.get("aiApiKey", "")
+    url = f"{base_url}/v1/models"
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        resp = await http_client.get(url, headers=headers, timeout=10.0)
+        data = resp.json()
+        models = [m["id"] for m in data.get("data", [])]
+        return {"models": sorted(models)}
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="模型列表請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"無法取得模型列表: {str(e)}")
+
+
+# ===== OpenAI 格式聊天代理端點 =====
+
+def _build_ai_system_prompt(context: dict) -> str:
+    """組裝 AI 助手 system prompt"""
+    cards = context.get("cards", [])
+    current_card = context.get("currentCard")
+    node_info_list = context.get("nodeInfoList")
+
+    cards_text = "\n".join(
+        f"- {c.get('title', '')}（{c.get('description', '')}）" for c in cards
+    ) if cards else "（尚無可用應用）"
+
+    parts = [
+        "你是 BWE-RH APICall 的 AI 助手，協助使用者選擇 AI 應用並撰寫提示詞。",
+        f"可用應用：\n{cards_text}",
+    ]
+
+    if current_card:
+        node_fields = ""
+        if node_info_list:
+            node_fields = "、".join(
+                n.get("description", n.get("nodeId", "")) for n in node_info_list
+                if n.get("fieldType") == "STRING"
+            )
+        parts.append(
+            f"目前應用：{current_card.get('title', '')}，"
+            f"可修改欄位：{node_fields or '（無文字欄位）'}"
+        )
+
+    parts.append("當建議提示詞時，用 ```prompt 區塊包裹，使用者可一鍵套用。")
+    parts.append("請用繁體中文回答。")
+    return "\n".join(parts)
+
+@app.post("/api/proxy/chat")
+async def proxy_chat(req: AIChatRequest):
+    """統一聊天代理：優先使用 OpenAI 格式設定，否則回退 Gemini"""
+    ai_base = config.get("aiBaseUrl", "").rstrip("/")
+    ai_key = config.get("aiApiKey", "")
+    ai_model = config.get("aiModel", "")
+
+    if ai_base and ai_key and ai_model:
+        system_prompt = _build_ai_system_prompt(req.context)
+        messages = [{"role": "system", "content": system_prompt}]
+        for h in req.history:
+            role = "user" if h.get("role") == "user" else "assistant"
+            messages.append({"role": role, "content": h.get("text", "")})
+        messages.append({"role": "user", "content": req.message})
+
+        url = f"{ai_base}/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {ai_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {"model": ai_model, "messages": messages, "temperature": 0.7, "max_tokens": 2048}
+        try:
+            resp = await http_client.post(url, json=payload, headers=headers, timeout=60.0)
+            data = resp.json()
+            try:
+                text = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError):
+                err_msg = data.get("error", {}).get("message", "AI 回應格式異常")
+                raise HTTPException(status_code=502, detail=err_msg)
+            return {"text": text}
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="AI API 請求逾時")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"AI 請求失敗: {str(e)}")
+
+    # 回退至 Gemini
+    gemini_key = get_gemini_api_key()
+    if not gemini_key:
+        raise HTTPException(status_code=503, detail="AI 助手未設定，請在管理介面配置 AI 設定")
+    gemini_req = GeminiChatRequest(message=req.message, history=req.history, context=req.context)
+    return await proxy_gemini(gemini_req)
 
 
 # ===== 通用轉發 =====

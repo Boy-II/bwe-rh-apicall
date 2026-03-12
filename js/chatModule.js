@@ -83,7 +83,7 @@ const ChatModule = (() => {
     const loadingEl = _appendLoading();
 
     try {
-      const resp = await fetch('/api/proxy/gemini', {
+      const resp = await fetch('/api/proxy/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

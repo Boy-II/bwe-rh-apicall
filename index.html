@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BWE-RH APICall</title>
-  <link rel="stylesheet" href="css/style.css?v=4" />
+  <link rel="stylesheet" href="css/style.css?v=5" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
 </head>
 <body>
@@ -20,8 +20,9 @@
       <button class="btn btn-ghost" id="btnChatToggle" title="AI 助手">💬 AI 助手</button>
       <!-- 未登入：顯示管理員登入按鈕 -->
       <button class="btn btn-ghost" id="btnAdminLogin" title="管理員登入">🔐 管理</button>
-      <!-- 已登入：顯示管理員標識 + 登出按鈕（預設隱藏） -->
+      <!-- 已登入：顯示管理員標識 + AI 設定 + 登出按鈕（預設隱藏） -->
       <span class="admin-badge" id="adminBadge" style="display:none;">👑 管理中</span>
+      <button class="btn btn-ghost" id="btnAISettings" style="display:none;" title="AI 助手設定">🤖 AI 設定</button>
       <button class="btn btn-ghost btn-danger-ghost" id="btnAdminLogout" style="display:none;">登出</button>
     </div>
   </nav>
@@ -135,6 +136,40 @@
     </div>
   </div>
 
+  <!-- ===== Modal：AI 助手設定（管理員專用）===== -->
+  <div class="modal-overlay" id="aiSettingsModalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🤖 AI 助手設定</h2>
+        <button class="btn btn-icon" id="btnCloseAIModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">API Base URL</label>
+          <input type="text" class="form-input" id="aiModalBaseUrl" placeholder="例如: https://api.openai.com" />
+          <p class="form-hint">支援任何 OpenAI 相容格式的服務（OpenAI、Gemini、Ollama 等）</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="aiModalApiKey" placeholder="留空則保留現有金鑰" autocomplete="new-password" />
+          <p class="form-hint" id="aiModalApiKeyHint"></p>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" id="btnFetchModels" type="button" style="width:100%;">🔌 測試連線並拉取模型</button>
+        </div>
+        <div class="form-group" id="aiModelGroup" style="display:none;">
+          <label class="form-label">選擇模型</label>
+          <select class="form-input" id="aiModalModel"></select>
+          <p class="form-hint" id="aiModalModelHint"></p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnCancelAIModal">取消</button>
+        <button class="btn btn-primary" id="btnSaveAIModal">💾 儲存設定</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== AI 助手側邊欄 ===== -->
   <aside class="chat-sidebar" id="chatSidebar">
     <div class="chat-header">
@@ -150,6 +185,6 @@
   <div class="chat-backdrop" id="chatBackdrop"></div>
 
   <!-- ===== 腳本 ===== -->
-  <script type="module" src="js/app.js?v=4"></script>
+  <script type="module" src="js/app.js?v=5"></script>
 </body>
 </html>

@@ -36,6 +36,7 @@ function cacheDom() {
   // 導航列管理員控制
   dom.btnAdminLogin   = document.getElementById('btnAdminLogin');
   dom.adminBadge      = document.getElementById('adminBadge');
+  dom.btnAISettings   = document.getElementById('btnAISettings');
   dom.btnAdminLogout  = document.getElementById('btnAdminLogout');
   // 任務頁
   dom.btnBack         = document.getElementById('btnBack');
@@ -55,6 +56,18 @@ function cacheDom() {
   dom.btnCloseAdminModal    = document.getElementById('btnCloseAdminModal');
   dom.btnCancelAdminModal   = document.getElementById('btnCancelAdminModal');
   dom.btnDoAdminLogin       = document.getElementById('btnDoAdminLogin');
+  // AI 設定 Modal（管理員）
+  dom.aiSettingsModalOverlay  = document.getElementById('aiSettingsModalOverlay');
+  dom.aiModalBaseUrl          = document.getElementById('aiModalBaseUrl');
+  dom.aiModalApiKey           = document.getElementById('aiModalApiKey');
+  dom.aiModalApiKeyHint       = document.getElementById('aiModalApiKeyHint');
+  dom.aiModelGroup            = document.getElementById('aiModelGroup');
+  dom.aiModalModel            = document.getElementById('aiModalModel');
+  dom.aiModalModelHint        = document.getElementById('aiModalModelHint');
+  dom.btnFetchModels          = document.getElementById('btnFetchModels');
+  dom.btnCloseAIModal         = document.getElementById('btnCloseAIModal');
+  dom.btnCancelAIModal        = document.getElementById('btnCancelAIModal');
+  dom.btnSaveAIModal          = document.getElementById('btnSaveAIModal');
   // 卡片 Modal（管理員）
   dom.cardModalOverlay      = document.getElementById('cardModalOverlay');
   dom.cardModalTitle        = document.getElementById('cardModalTitle');
@@ -91,10 +104,12 @@ function updateAdminUI() {
   if (state.isAdmin) {
     dom.btnAdminLogin.style.display  = 'none';
     dom.adminBadge.style.display     = 'inline-flex';
+    dom.btnAISettings.style.display  = 'inline-flex';
     dom.btnAdminLogout.style.display = 'inline-flex';
   } else {
     dom.btnAdminLogin.style.display  = 'inline-flex';
     dom.adminBadge.style.display     = 'none';
+    dom.btnAISettings.style.display  = 'none';
     dom.btnAdminLogout.style.display = 'none';
   }
 }
@@ -226,6 +241,89 @@ async function doAdminLogout() {
   updateAdminUI();
   renderCards();
   showToast('已登出管理員', 'info');
+}
+
+// ===== AI 設定 Modal（管理員）=====
+
+async function openAISettingsModal() {
+  dom.aiModalBaseUrl.value = '';
+  dom.aiModalApiKey.value  = '';
+  dom.aiModalApiKeyHint.textContent = '';
+  dom.aiModelGroup.style.display = 'none';
+  dom.aiModalModel.innerHTML = '';
+
+  dom.aiSettingsModalOverlay.classList.add('active');
+
+  try {
+    const cfg = await API.adminGetAIConfig(state.adminToken);
+    dom.aiModalBaseUrl.value = cfg.aiBaseUrl || '';
+    dom.aiModalApiKeyHint.textContent = cfg.hasApiKey ? '（已設定，留空保留現有金鑰）' : '（尚未設定）';
+    // 若已有設定的模型，顯示下拉但僅包含現有值
+    if (cfg.aiModel) {
+      _populateModelSelect([cfg.aiModel], cfg.aiModel);
+      dom.aiModelGroup.style.display = 'block';
+      dom.aiModalModelHint.textContent = '點擊「測試連線」可重新拉取完整列表';
+    }
+  } catch (e) { /* 忽略載入錯誤 */ }
+}
+
+function closeAISettingsModal() {
+  dom.aiSettingsModalOverlay.classList.remove('active');
+}
+
+function _populateModelSelect(models, selected) {
+  dom.aiModalModel.innerHTML = '';
+  if (!models || models.length === 0) return;
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    if (m === selected) opt.selected = true;
+    dom.aiModalModel.appendChild(opt);
+  });
+}
+
+async function fetchAIModels() {
+  const baseUrl = dom.aiModalBaseUrl.value.trim();
+  if (!baseUrl) { showToast('請先輸入 API Base URL', 'error'); return; }
+
+  dom.btnFetchModels.disabled = true;
+  dom.btnFetchModels.textContent = '連線中...';
+  try {
+    const apiKey = dom.aiModalApiKey.value.trim();
+    const { models } = await API.adminFetchAIModels(state.adminToken, baseUrl, apiKey);
+    const currentModel = dom.aiModalModel.value;
+    _populateModelSelect(models, currentModel);
+    dom.aiModelGroup.style.display = 'block';
+    dom.aiModalModelHint.textContent = `共 ${models.length} 個模型`;
+    showToast(`連線成功，已載入 ${models.length} 個模型`, 'success');
+  } catch (e) {
+    dom.aiModelGroup.style.display = 'none';
+    showToast(`連線失敗: ${e.message}`, 'error');
+  } finally {
+    dom.btnFetchModels.disabled = false;
+    dom.btnFetchModels.textContent = '🔌 測試連線並拉取模型';
+  }
+}
+
+async function saveAISettings() {
+  const aiBaseUrl = dom.aiModalBaseUrl.value.trim();
+  const aiApiKey  = dom.aiModalApiKey.value.trim();
+  const aiModel   = dom.aiModalModel.value;
+
+  if (!aiBaseUrl) { showToast('請輸入 API Base URL', 'error'); return; }
+  if (!aiModel)   { showToast('請先測試連線並選擇模型', 'error'); return; }
+
+  dom.btnSaveAIModal.disabled = true;
+  try {
+    await API.adminSaveAIConfig(state.adminToken, { aiBaseUrl, aiApiKey, aiModel });
+    closeAISettingsModal();
+    showToast('AI 設定已儲存', 'success');
+  } catch (e) {
+    showToast(`儲存失敗: ${e.message}`, 'error');
+  } finally {
+    dom.btnSaveAIModal.disabled = false;
+  }
 }
 
 // ===== 卡片 Modal（管理員）=====
@@ -444,12 +542,20 @@ function bindEvents() {
 
   // 管理員登入/登出
   dom.btnAdminLogin.addEventListener('click', openAdminModal);
+  dom.btnAISettings.addEventListener('click', openAISettingsModal);
   dom.btnAdminLogout.addEventListener('click', doAdminLogout);
   dom.btnCloseAdminModal.addEventListener('click', closeAdminModal);
   dom.btnCancelAdminModal.addEventListener('click', closeAdminModal);
   dom.btnDoAdminLogin.addEventListener('click', doAdminLogin);
   dom.adminModalOverlay.addEventListener('click', (e) => { if (e.target === dom.adminModalOverlay) closeAdminModal(); });
   dom.inputAdminPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdminLogin(); });
+
+  // AI 設定 Modal
+  dom.btnCloseAIModal.addEventListener('click', closeAISettingsModal);
+  dom.btnCancelAIModal.addEventListener('click', closeAISettingsModal);
+  dom.btnFetchModels.addEventListener('click', fetchAIModels);
+  dom.btnSaveAIModal.addEventListener('click', saveAISettings);
+  dom.aiSettingsModalOverlay.addEventListener('click', (e) => { if (e.target === dom.aiSettingsModalOverlay) closeAISettingsModal(); });
 
   // 卡片 Modal
   dom.btnCloseCardModal.addEventListener('click', closeCardModal);
@@ -470,8 +576,9 @@ function bindEvents() {
   // ESC
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (dom.adminModalOverlay.classList.contains('active')) closeAdminModal();
-    if (dom.cardModalOverlay.classList.contains('active'))  closeCardModal();
+    if (dom.adminModalOverlay.classList.contains('active'))    closeAdminModal();
+    if (dom.aiSettingsModalOverlay.classList.contains('active')) closeAISettingsModal();
+    if (dom.cardModalOverlay.classList.contains('active'))      closeCardModal();
   });
 }
 

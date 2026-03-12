@@ -151,10 +151,50 @@ const API = (() => {
     return await res.json();
   }
 
+  // ===== AI 設定 API =====
+
+  async function adminGetAIConfig(token) {
+    const res = await fetch('/api/admin/ai-config', {
+      headers: { 'X-Admin-Token': token }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async function adminSaveAIConfig(token, cfg) {
+    const res = await fetch('/api/admin/ai-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify(cfg)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async function adminFetchAIModels(token, aiBaseUrl, aiApiKey) {
+    const res = await fetch('/api/admin/ai-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ aiBaseUrl, aiApiKey })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
   return {
     getNodeInfo, uploadFile, submitTask, queryTaskOutputs, pollTask, getConfigStatus,
     adminLogin, adminLogout, adminVerify,
-    getCards, adminAddCard, adminUpdateCard, adminDeleteCard
+    getCards, adminAddCard, adminUpdateCard, adminDeleteCard,
+    adminGetAIConfig, adminSaveAIConfig, adminFetchAIModels
   };
 })();
 
