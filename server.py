@@ -46,6 +46,24 @@ def load_config():
     if env_pw:
         config["adminPassword"] = env_pw
 
+    env_gemini = os.environ.get("GEMINI_API_KEY")
+    if env_gemini:
+        config["geminiApiKey"] = env_gemini
+
+    env_cards = os.environ.get("CARDS_JSON")
+    if env_cards:
+        try:
+            config["cards"] = json.loads(env_cards)
+        except Exception as e:
+            print(f"[Config] CARDS_JSON 解析失敗: {e}")
+
+    env_polling = os.environ.get("POLLING_INTERVAL")
+    if env_polling:
+        try:
+            config["pollingInterval"] = int(env_polling)
+        except ValueError:
+            pass
+
     return config
 
 config = load_config()
