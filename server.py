@@ -522,6 +522,11 @@ async def proxy_chat(req: AIChatRequest):
         try:
             resp = await http_client.post(url, json=payload, headers=headers, timeout=60.0)
             data = resp.json()
+            if not resp.is_success:
+                err_msg = data.get("error", {}).get("message") or data.get("message") or f"HTTP {resp.status_code}"
+                if req.image:
+                    err_msg += "（提示：請確認所選模型支援圖片輸入）"
+                raise HTTPException(status_code=502, detail=err_msg)
             try:
                 text = data["choices"][0]["message"]["content"]
             except (KeyError, IndexError):
@@ -539,7 +544,10 @@ async def proxy_chat(req: AIChatRequest):
     gemini_key = get_gemini_api_key()
     if not gemini_key:
         raise HTTPException(status_code=503, detail="AI 助手未設定，請在管理介面配置 AI 設定")
-    gemini_req = GeminiChatRequest(message=req.message, history=req.history, context=req.context)
+    gemini_req = GeminiChatRequest(
+        message=req.message, history=req.history,
+        context=req.context, image=req.image
+    )
     return await proxy_gemini(gemini_req)
 
 
