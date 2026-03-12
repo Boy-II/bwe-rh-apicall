@@ -8,21 +8,30 @@ const ChatModule = (() => {
   let _history = [];   // [{role: 'user'|'model', text: '...'}]
   let _onApplyPrompt = null;
   let _isLoading = false;
+  let _pendingImage = null;   // base64 data URL of pending image
+
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024;  // 2 MB
 
   // ===== DOM 參照 =====
   let _sidebar, _messages, _input, _btnSend, _btnClose, _btnToggle, _backdrop;
+  let _imageInput, _imagePreview, _imageThumb, _btnClearImage, _btnClearChat;
 
   // ===== 初始化 =====
   function init({ onApplyPrompt } = {}) {
     _onApplyPrompt = onApplyPrompt || null;
 
-    _sidebar   = document.getElementById('chatSidebar');
-    _messages  = document.getElementById('chatMessages');
-    _input     = document.getElementById('chatInput');
-    _btnSend   = document.getElementById('btnChatSend');
-    _btnClose  = document.getElementById('btnChatClose');
-    _btnToggle = document.getElementById('btnChatToggle');
-    _backdrop  = document.getElementById('chatBackdrop');
+    _sidebar       = document.getElementById('chatSidebar');
+    _messages      = document.getElementById('chatMessages');
+    _input         = document.getElementById('chatInput');
+    _btnSend       = document.getElementById('btnChatSend');
+    _btnClose      = document.getElementById('btnChatClose');
+    _btnToggle     = document.getElementById('btnChatToggle');
+    _backdrop      = document.getElementById('chatBackdrop');
+    _imageInput    = document.getElementById('chatImageInput');
+    _imagePreview  = document.getElementById('chatImagePreview');
+    _imageThumb    = document.getElementById('chatImageThumb');
+    _btnClearImage = document.getElementById('btnClearChatImage');
+    _btnClearChat  = document.getElementById('btnClearChat');
 
     _btnToggle.addEventListener('click', toggle);
     _btnClose.addEventListener('click', close);
@@ -35,13 +44,20 @@ const ChatModule = (() => {
       }
     });
 
+    // 圖片上傳
+    _imageInput.addEventListener('change', _onImageSelected);
+    _btnClearImage.addEventListener('click', _clearPendingImage);
+
+    // 清除對話
+    if (_btnClearChat) _btnClearChat.addEventListener('click', clearHistory);
+
     // ESC 關閉
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && _sidebar.classList.contains('active')) close();
     });
 
     // 顯示歡迎訊息
-    _appendMessage('model', [{ type: 'text', content: '您好！我是 BWE-RH AI 助手 🤖\n可以問我關於 AI 應用選擇或提示詞撰寫的問題。' }]);
+    _appendMessage('model', [{ type: 'text', content: '您好！我是 BWE-RH AI 助手 🤖\n可以問我關於 AI 應用選擇或提示詞撰寫的問題。\n\n支援傳送圖片（最大 2MB）一起提問。' }]);
   }
 
   // ===== 開關側邊欄 =====
@@ -69,14 +85,56 @@ const ChatModule = (() => {
     if (nodeInfoList !== undefined) _context.nodeInfoList = nodeInfoList;
   }
 
+  // ===== 圖片處理 =====
+  function _onImageSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      alert(`圖片超過 2MB 限制（目前 ${(file.size / 1024 / 1024).toFixed(1)} MB），請選擇較小的圖片。`);
+      _imageInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      _pendingImage = ev.target.result;
+      _imageThumb.src = _pendingImage;
+      _imagePreview.classList.add('visible');
+    };
+    reader.readAsDataURL(file);
+    _imageInput.value = '';   // 允許重複選同檔案
+  }
+
+  function _clearPendingImage() {
+    _pendingImage = null;
+    _imageThumb.src = '';
+    _imagePreview.classList.remove('visible');
+  }
+
+  // ===== 清除對話 =====
+  function clearHistory() {
+    _history = [];
+    _messages.innerHTML = '';
+    _clearPendingImage();
+    _appendMessage('model', [{ type: 'text', content: '對話已清除。有什麼可以幫您的嗎？' }]);
+  }
+
   // ===== 發送訊息 =====
   async function sendMessage() {
     const text = _input.value.trim();
-    if (!text || _isLoading) return;
+    if ((!text && !_pendingImage) || _isLoading) return;
 
+    const imageToSend = _pendingImage;
     _input.value = '';
-    _appendMessage('user', [{ type: 'text', content: text }]);
-    _history.push({ role: 'user', text });
+    _clearPendingImage();
+
+    // 渲染使用者訊息
+    const userParts = [];
+    if (imageToSend) userParts.push({ type: 'image', content: imageToSend });
+    if (text) userParts.push({ type: 'text', content: text });
+    _appendMessage('user', userParts);
+    _history.push({ role: 'user', text: text || '（圖片）' });
 
     _isLoading = true;
     _btnSend.disabled = true;
@@ -87,9 +145,10 @@ const ChatModule = (() => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
-          history: _history.slice(-20),   // 保留最近 20 條
-          context: _context
+          message: text || '請描述這張圖片的內容。',
+          history: _history.slice(-20),
+          context: _context,
+          image: imageToSend || ''
         })
       });
 
@@ -143,7 +202,13 @@ const ChatModule = (() => {
     bubble.className = 'chat-bubble';
 
     parts.forEach(part => {
-      if (part.type === 'text') {
+      if (part.type === 'image') {
+        const img = document.createElement('img');
+        img.className = 'chat-msg-image';
+        img.src = part.content;
+        img.alt = '圖片';
+        bubble.appendChild(img);
+      } else if (part.type === 'text') {
         const p = document.createElement('div');
         p.className = 'chat-text';
         p.textContent = part.content;
@@ -188,7 +253,7 @@ const ChatModule = (() => {
     return wrapper;
   }
 
-  return { init, open, close, toggle, setContext };
+  return { init, open, close, toggle, setContext, clearHistory };
 })();
 
 export default ChatModule;

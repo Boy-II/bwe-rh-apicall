@@ -157,11 +157,13 @@ class GeminiChatRequest(BaseModel):
     message: str
     history: list = []   # [{role: "user"|"model", text: "..."}]
     context: dict = {}   # {cards, currentCard, nodeInfoList}
+    image: str = ""      # base64 data URL
 
 class AIChatRequest(BaseModel):
     message: str
     history: list = []
     context: dict = {}
+    image: str = ""   # base64 data URL, e.g. "data:image/jpeg;base64,..."
 
 class AIConfigRequest(BaseModel):
     aiBaseUrl: str = ""
@@ -373,7 +375,17 @@ async def proxy_gemini(req: GeminiChatRequest):
     for h in req.history:
         role = "user" if h.get("role") == "user" else "model"
         contents.append({"role": role, "parts": [{"text": h.get("text", "")}]})
-    contents.append({"role": "user", "parts": [{"text": req.message}]})
+
+    # 組裝當前訊息（含圖片）
+    user_parts: list = [{"text": req.message}]
+    if req.image:
+        try:
+            header, b64data = req.image.split(",", 1)
+            mime_type = header.split(":")[1].split(";")[0]
+        except Exception:
+            mime_type, b64data = "image/jpeg", req.image
+        user_parts.append({"inlineData": {"mimeType": mime_type, "data": b64data}})
+    contents.append({"role": "user", "parts": user_parts})
 
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -490,7 +502,16 @@ async def proxy_chat(req: AIChatRequest):
         for h in req.history:
             role = "user" if h.get("role") == "user" else "assistant"
             messages.append({"role": role, "content": h.get("text", "")})
-        messages.append({"role": "user", "content": req.message})
+
+        # 組裝當前訊息（含圖片）
+        if req.image:
+            user_content = [
+                {"type": "text", "text": req.message},
+                {"type": "image_url", "image_url": {"url": req.image}}
+            ]
+        else:
+            user_content = req.message
+        messages.append({"role": "user", "content": user_content})
 
         url = f"{ai_base}/v1/chat/completions"
         headers = {

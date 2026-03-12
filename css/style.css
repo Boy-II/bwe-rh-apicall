@@ -1240,6 +1240,68 @@ body.chat-open main {
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+/* 圖片上傳按鈕 */
+.chat-input-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.chat-upload-btn {
+  padding: 0.5rem 0.7rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* 圖片預覽（發送前） */
+.chat-image-preview {
+  display: none;
+  position: relative;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.chat-image-preview.visible {
+  display: flex;
+}
+
+.chat-image-preview img {
+  max-height: 80px;
+  max-width: 100%;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.chat-image-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.7rem;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* 訊息中的圖片縮圖 */
+.chat-msg-image {
+  max-width: 200px;
+  max-height: 160px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
 /* 側邊欄響應式：小螢幕時全寬 */
 @media (max-width: 480px) {
   .chat-sidebar {

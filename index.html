@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BWE-RH APICall</title>
-  <link rel="stylesheet" href="css/style.css?v=5" />
+  <link rel="stylesheet" href="css/style.css?v=6" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
 </head>
 <body>
@@ -174,17 +174,28 @@
   <aside class="chat-sidebar" id="chatSidebar">
     <div class="chat-header">
       <span>💬 AI 助手</span>
-      <button class="btn btn-icon" id="btnChatClose">✕</button>
+      <div style="display:flex;gap:0.4rem;align-items:center;">
+        <button class="btn btn-ghost" id="btnClearChat" style="font-size:0.75rem;padding:0.3rem 0.6rem;" title="清除對話">🗑️ 清除</button>
+        <button class="btn btn-icon" id="btnChatClose">✕</button>
+      </div>
     </div>
     <div class="chat-messages" id="chatMessages"></div>
     <div class="chat-input-area">
+      <div class="chat-image-preview" id="chatImagePreview">
+        <img id="chatImageThumb" alt="預覽" />
+        <button class="btn btn-icon chat-image-clear" id="btnClearChatImage" title="移除圖片">✕</button>
+      </div>
       <textarea id="chatInput" class="chat-textarea" placeholder="問我任何問題..." rows="3"></textarea>
-      <button class="btn btn-primary" id="btnChatSend">發送</button>
+      <div class="chat-input-bar">
+        <label class="btn btn-ghost chat-upload-btn" for="chatImageInput" title="上傳圖片（最大 2MB）">🖼️</label>
+        <input type="file" id="chatImageInput" accept="image/*" style="display:none;" />
+        <button class="btn btn-primary" id="btnChatSend" style="flex:1;">發送</button>
+      </div>
     </div>
   </aside>
   <div class="chat-backdrop" id="chatBackdrop"></div>
 
   <!-- ===== 腳本 ===== -->
-  <script type="module" src="js/app.js?v=5"></script>
+  <script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>
