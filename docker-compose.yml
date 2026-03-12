@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  rhapi:
+    build: .
+    container_name: runninghub-client
+    ports:
+      - "8000:8000"
+    environment:
+      - RUNNINGHUB_API_KEY=4a20a178c59d401499058263fccde86d
+      - RUNNINGHUB_BASE_URL=https://www.runninghub.ai
+      - ADMIN_PASSWORD=admin
+      - GEMINI_API_KEY=your_key_here
+    volumes:
+      - ./config.json:/app/config.json
+    restart: unless-stopped

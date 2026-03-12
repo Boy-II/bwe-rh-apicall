@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BWE-RH APICall</title>
+  <link rel="stylesheet" href="css/style.css?v=4" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
+</head>
+<body>
+
+  <!-- ===== 導航列 ===== -->
+  <nav class="navbar">
+    <a class="navbar-brand" id="navHome">
+      <span class="logo">🚀</span>
+      <span>BWE-RH APICall</span>
+    </a>
+    <div class="navbar-actions">
+      <!-- AI 助手按鈕 -->
+      <button class="btn btn-ghost" id="btnChatToggle" title="AI 助手">💬 AI 助手</button>
+      <!-- 未登入：顯示管理員登入按鈕 -->
+      <button class="btn btn-ghost" id="btnAdminLogin" title="管理員登入">🔐 管理</button>
+      <!-- 已登入：顯示管理員標識 + 登出按鈕（預設隱藏） -->
+      <span class="admin-badge" id="adminBadge" style="display:none;">👑 管理中</span>
+      <button class="btn btn-ghost btn-danger-ghost" id="btnAdminLogout" style="display:none;">登出</button>
+    </div>
+  </nav>
+
+  <!-- ===== Toast 通知容器 ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ===== 主要內容 ===== -->
+  <main class="container">
+
+    <!-- ====== 檢視：卡片首頁 ====== -->
+    <section class="view active" id="viewHome">
+      <div class="home-header">
+        <h1>我的 AI 應用</h1>
+        <p>選擇一個應用卡片開始工作</p>
+      </div>
+      <div class="card-grid" id="cardGrid">
+        <!-- 卡片由 JS 動態渲染 -->
+      </div>
+    </section>
+
+    <!-- ====== 檢視：任務執行頁 ====== -->
+    <section class="view" id="viewTask">
+      <div class="task-header">
+        <button class="back-btn" id="btnBack" title="返回">←</button>
+        <div class="task-title-area">
+          <h2 id="taskTitle">應用名稱</h2>
+          <div class="task-webapp-id" id="taskWebappId">webappId: —</div>
+        </div>
+        <button class="btn" id="btnRefreshNodes">🔄 重新載入</button>
+      </div>
+
+      <div class="node-list" id="nodeList">
+        <div class="empty-hint">點擊「載入節點」以獲取可修改的節點列表</div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-primary" id="btnLoadNodes">📥 載入節點</button>
+        <button class="btn btn-success" id="btnSubmitTask" disabled>🚀 提交任務</button>
+      </div>
+
+      <div class="status-area">
+        <div class="status-bar" id="statusBar">
+          <div class="status-spinner"></div>
+          <span class="status-text" id="statusText">準備中...</span>
+        </div>
+      </div>
+
+      <div class="result-area" id="resultArea" style="display: none;">
+        <h3>🎉 生成結果</h3>
+        <div id="resultContainer"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== Modal：管理員登入 ===== -->
+  <div class="modal-overlay" id="adminModalOverlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>🔐 管理員登入</h2>
+        <button class="btn btn-icon" id="btnCloseAdminModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">管理員密碼</label>
+          <input type="password" class="form-input" id="inputAdminPassword" placeholder="輸入管理員密碼..." autocomplete="current-password" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnCancelAdminModal">取消</button>
+        <button class="btn btn-primary" id="btnDoAdminLogin">🔓 登入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Modal：新增/編輯卡片（管理員專用）===== -->
+  <div class="modal-overlay" id="cardModalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="cardModalTitle">新增 AI 應用</h2>
+        <button class="btn btn-icon" id="btnCloseCardModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Webapp ID *</label>
+          <input type="text" class="form-input" id="cardModalWebappId" placeholder="例如: 2031966329095327746" />
+          <p class="form-hint">從 RunningHub AI 應用詳情頁 URL 中取得</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">應用名稱</label>
+          <input type="text" class="form-input" id="cardModalTitleInput" placeholder="例如: 圖像風格轉換" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">功能說明</label>
+          <textarea class="form-textarea" id="cardModalDescription" rows="3" placeholder="描述這個 AI 應用的功能..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">選擇圖示</label>
+          <div class="icon-picker" id="iconPicker"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">主題色</label>
+          <div class="color-picker" id="colorPicker"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnCancelCardModal">取消</button>
+        <button class="btn btn-primary" id="btnSaveCardModal">💾 儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== AI 助手側邊欄 ===== -->
+  <aside class="chat-sidebar" id="chatSidebar">
+    <div class="chat-header">
+      <span>💬 AI 助手</span>
+      <button class="btn btn-icon" id="btnChatClose">✕</button>
+    </div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-input-area">
+      <textarea id="chatInput" class="chat-textarea" placeholder="問我任何問題..." rows="3"></textarea>
+      <button class="btn btn-primary" id="btnChatSend">發送</button>
+    </div>
+  </aside>
+  <div class="chat-backdrop" id="chatBackdrop"></div>
+
+  <!-- ===== 腳本 ===== -->
+  <script type="module" src="js/app.js?v=4"></script>
+</body>
+</html>

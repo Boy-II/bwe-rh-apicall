@@ -1,0 +1,395 @@
+"""
+server.py — RunningHub API 代理後端 (FastAPI)
+前端 JS 請求本地後端，後端轉發至 RunningHub API，解決 CORS 問題
+"""
+
+import os
+import json
+import secrets
+import httpx
+from datetime import datetime
+from pathlib import Path
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+# ===== 設定載入 =====
+CONFIG_PATH = Path(__file__).parent / "config.json"
+
+def load_config():
+    """載入設定：環境變數優先，其次 config.json"""
+    config = {
+        "apiKey": "",
+        "baseUrl": "https://www.runninghub.ai",
+        "adminPassword": "",
+        "pollingInterval": 3000,
+        "maxPollingRetries": 200,
+        "cards": []
+    }
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                config.update(json.load(f))
+        except Exception as e:
+            print(f"[Config] config.json 載入失敗: {e}")
+
+    env_key = os.environ.get("RUNNINGHUB_API_KEY")
+    if env_key:
+        config["apiKey"] = env_key
+
+    env_base = os.environ.get("RUNNINGHUB_BASE_URL")
+    if env_base:
+        config["baseUrl"] = env_base
+
+    env_pw = os.environ.get("ADMIN_PASSWORD")
+    if env_pw:
+        config["adminPassword"] = env_pw
+
+    return config
+
+config = load_config()
+
+def save_config_to_disk():
+    """將 config 寫回 config.json"""
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"設定儲存失敗: {str(e)}")
+
+# ===== 管理員 Session =====
+admin_sessions: set = set()
+
+def require_admin(request: Request) -> str:
+    """驗證管理員 Token，失敗則拋出 401"""
+    token = request.headers.get("X-Admin-Token", "")
+    if not token or token not in admin_sessions:
+        raise HTTPException(status_code=401, detail="需要管理員權限")
+    return token
+
+def get_api_key() -> str:
+    env_key = os.environ.get("RUNNINGHUB_API_KEY")
+    return env_key if env_key else config.get("apiKey", "")
+
+def get_base_url() -> str:
+    return config.get("baseUrl", "https://www.runninghub.ai")
+
+# ===== 生命週期 =====
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    await http_client.aclose()
+
+# ===== FastAPI 應用 =====
+app = FastAPI(title="RunningHub API Proxy", version="2.0.0", lifespan=lifespan)
+
+http_client = httpx.AsyncClient(timeout=60.0)
+
+
+# ===== 資料模型 =====
+class NodeInfoRequest(BaseModel):
+    webappId: str
+
+class SubmitTaskRequest(BaseModel):
+    webappId: str
+    nodeInfoList: list
+
+class TaskQueryRequest(BaseModel):
+    taskId: str
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+class CardData(BaseModel):
+    webappId: str
+    title: str
+    description: str = ""
+    icon: str = "🎨"
+    color: str = "#6C5CE7"
+
+class CardUpdateData(BaseModel):
+    title: str
+    description: str = ""
+    icon: str
+    color: str
+
+class GeminiChatRequest(BaseModel):
+    message: str
+    history: list = []   # [{role: "user"|"model", text: "..."}]
+    context: dict = {}   # {cards, currentCard, nodeInfoList}
+
+
+# ===== 管理員認證端點 =====
+
+@app.post("/api/admin/login")
+async def admin_login(req: AdminLoginRequest):
+    """管理員登入：驗證密碼，回傳 session token"""
+    admin_pw = config.get("adminPassword", "")
+    if not admin_pw or req.password != admin_pw:
+        raise HTTPException(status_code=401, detail="密碼錯誤")
+    token = secrets.token_hex(32)
+    admin_sessions.add(token)
+    return {"token": token}
+
+@app.post("/api/admin/logout")
+async def admin_logout(request: Request):
+    """管理員登出：移除 session token"""
+    token = request.headers.get("X-Admin-Token", "")
+    admin_sessions.discard(token)
+    return {"success": True}
+
+@app.get("/api/admin/verify")
+async def admin_verify(request: Request):
+    """驗證管理員 Token 是否有效"""
+    token = request.headers.get("X-Admin-Token", "")
+    return {"valid": bool(token and token in admin_sessions)}
+
+
+# ===== 卡片管理端點 =====
+
+@app.get("/api/cards")
+async def get_cards():
+    """取得所有應用卡片（公開）"""
+    return {"cards": config.get("cards", [])}
+
+@app.post("/api/admin/cards")
+async def admin_add_card(req: CardData, request: Request):
+    """新增應用卡片（管理員）"""
+    require_admin(request)
+    if "cards" not in config:
+        config["cards"] = []
+    card = {
+        "id": secrets.token_hex(8),
+        "webappId": req.webappId.strip(),
+        "title": req.title.strip() or f"應用 {req.webappId}",
+        "description": req.description.strip(),
+        "icon": req.icon,
+        "color": req.color,
+        "createdAt": datetime.utcnow().isoformat()
+    }
+    config["cards"].append(card)
+    save_config_to_disk()
+    return card
+
+@app.put("/api/admin/cards/{card_id}")
+async def admin_update_card(card_id: str, req: CardUpdateData, request: Request):
+    """更新應用卡片（管理員）"""
+    require_admin(request)
+    for card in config.get("cards", []):
+        if card["id"] == card_id:
+            card.update({
+                "title": req.title.strip(),
+                "description": req.description.strip(),
+                "icon": req.icon,
+                "color": req.color
+            })
+            save_config_to_disk()
+            return card
+    raise HTTPException(status_code=404, detail="卡片不存在")
+
+@app.delete("/api/admin/cards/{card_id}")
+async def admin_delete_card(card_id: str, request: Request):
+    """刪除應用卡片（管理員）"""
+    require_admin(request)
+    cards = config.get("cards", [])
+    new_cards = [c for c in cards if c["id"] != card_id]
+    if len(new_cards) == len(cards):
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    config["cards"] = new_cards
+    save_config_to_disk()
+    return {"success": True}
+
+
+# ===== RunningHub API 代理端點 =====
+
+@app.post("/api/proxy/getNodeInfo")
+async def proxy_get_node_info(req: NodeInfoRequest):
+    """代理：獲取節點資訊（GET /api/webapp/apiCallDemo?apiKey=&webappId=）"""
+    base = get_base_url()
+    url = f"{base}/api/webapp/apiCallDemo"
+    try:
+        resp = await http_client.get(
+            url,
+            params={"apiKey": get_api_key(), "webappId": req.webappId}
+        )
+        return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"請求失敗: {str(e)}")
+
+@app.post("/api/proxy/submitTask")
+async def proxy_submit_task(req: SubmitTaskRequest):
+    """代理：提交任務（POST /task/openapi/ai-app/run，body apiKey）"""
+    return await forward_json_with_apikey("/task/openapi/ai-app/run", {
+        "webappId": req.webappId,
+        "nodeInfoList": req.nodeInfoList
+    })
+
+@app.post("/api/proxy/queryTaskOutputs")
+async def proxy_query_outputs(req: TaskQueryRequest):
+    """代理：查詢任務狀態與結果（v2 Bearer，支援 status 欄位）"""
+    return await forward_json("/openapi/v2/query", {
+        "taskId": req.taskId
+    })
+
+@app.post("/api/proxy/uploadFile")
+async def proxy_upload_file(
+    file: UploadFile = File(...),
+    fileType: str = Form(default="image")
+):
+    """代理：上傳檔案（POST /task/openapi/upload，form body apiKey）"""
+    base = get_base_url()
+    url = f"{base}/task/openapi/upload"
+    file_content = await file.read()
+    try:
+        resp = await http_client.post(
+            url,
+            data={"apiKey": get_api_key(), "fileType": fileType},
+            files={"file": (file.filename, file_content, file.content_type or "application/octet-stream")}
+        )
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"上傳失敗: {str(e)}")
+
+@app.post("/api/proxy/getAccountStatus")
+async def proxy_get_account():
+    """代理：取得帳戶狀態"""
+    return await forward_json_with_apikey("/api/user/getAccountStatus", {})
+
+@app.get("/api/config/status")
+async def get_config_status():
+    """取得設定狀態（不回傳完整 Key）"""
+    key = get_api_key()
+    return {
+        "hasApiKey": bool(key) and key != "YOUR_API_KEY_HERE",
+        "baseUrl": get_base_url(),
+        "pollingInterval": config.get("pollingInterval", 3000),
+        "maxPollingRetries": config.get("maxPollingRetries", 200)
+    }
+
+
+# ===== Gemini AI 代理端點 =====
+
+def get_gemini_api_key() -> str:
+    env_key = os.environ.get("GEMINI_API_KEY")
+    if env_key and env_key != "your_key_here":
+        return env_key
+    return config.get("geminiApiKey", "")
+
+@app.post("/api/proxy/gemini")
+async def proxy_gemini(req: GeminiChatRequest):
+    """代理：呼叫 Gemini 2.5 Flash API"""
+    key = get_gemini_api_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="Gemini API Key 未設定")
+
+    # 組裝 system prompt
+    cards = req.context.get("cards", [])
+    current_card = req.context.get("currentCard")
+    node_info_list = req.context.get("nodeInfoList")
+
+    cards_text = "\n".join(
+        f"- {c.get('title', '')}（{c.get('description', '')}）" for c in cards
+    ) if cards else "（尚無可用應用）"
+
+    system_parts = [
+        "你是 BWE-RH APICall 的 AI 助手，協助使用者選擇 AI 應用並撰寫提示詞。",
+        f"可用應用：\n{cards_text}",
+    ]
+
+    if current_card:
+        node_fields = ""
+        if node_info_list:
+            node_fields = "、".join(
+                n.get("description", n.get("nodeId", "")) for n in node_info_list
+                if n.get("fieldType") == "STRING"
+            )
+        system_parts.append(
+            f"目前應用：{current_card.get('title', '')}，"
+            f"可修改欄位：{node_fields or '（無文字欄位）'}"
+        )
+
+    system_parts.append("當建議提示詞時，用 ```prompt 區塊包裹，使用者可一鍵套用。")
+    system_parts.append("請用繁體中文回答。")
+    system_prompt = "\n".join(system_parts)
+
+    # 組裝 Gemini contents
+    contents = []
+    for h in req.history:
+        role = "user" if h.get("role") == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": h.get("text", "")}]})
+    contents.append({"role": "user", "parts": [{"text": req.message}]})
+
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048}
+    }
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key={key}"
+    try:
+        resp = await http_client.post(url, json=payload, timeout=30.0)
+        data = resp.json()
+        # 提取回應文字
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            text = data.get("error", {}).get("message", "Gemini 回應格式異常")
+            raise HTTPException(status_code=502, detail=text)
+        return {"text": text}
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Gemini API 請求逾時")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gemini 請求失敗: {str(e)}")
+
+
+# ===== 通用轉發 =====
+async def forward_json(endpoint: str, body: dict):
+    """轉發 JSON POST 請求（Bearer auth，用於 v2 端點）"""
+    base = get_base_url()
+    url = f"{base}{endpoint}"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {get_api_key()}"
+    }
+    try:
+        resp = await http_client.post(url, json=body, headers=headers)
+        return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"請求失敗: {str(e)}")
+
+async def forward_json_with_apikey(endpoint: str, body: dict):
+    """轉發 JSON POST 請求（body 注入 apiKey，用於 task/openapi 端點）"""
+    base = get_base_url()
+    url = f"{base}{endpoint}"
+    try:
+        resp = await http_client.post(url, json={**body, "apiKey": get_api_key()})
+        return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"請求失敗: {str(e)}")
+
+
+# ===== 靜態檔案服務 =====
+static_dir = Path(__file__).parent
+app.mount("/css", StaticFiles(directory=static_dir / "css"), name="css")
+app.mount("/js", StaticFiles(directory=static_dir / "js"), name="js")
+
+@app.get("/")
+async def serve_index():
+    return FileResponse(static_dir / "index.html")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
