@@ -187,7 +187,13 @@
       </div>
       <textarea id="chatInput" class="chat-textarea" placeholder="問我任何問題..." rows="3"></textarea>
       <div class="chat-input-bar">
-        <label class="btn btn-ghost chat-upload-btn" for="chatImageInput" title="上傳圖片（最大 2MB）">🖼️</label>
+        <label class="btn btn-ghost chat-upload-btn" for="chatImageInput" title="上傳圖片（最大 2MB）">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="16"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+        </label>
         <input type="file" id="chatImageInput" accept="image/*" style="display:none;" />
         <button class="btn btn-primary" id="btnChatSend" style="flex:1;">發送</button>
       </div>
