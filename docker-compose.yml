@@ -13,4 +13,5 @@ services:
       - GEMINI_API_KEY=your_key_here
     volumes:
       - ./config.json:/app/config.json
+      - ./config.json:/card/config.json
     restart: unless-stopped
