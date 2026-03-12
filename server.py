@@ -15,7 +15,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ===== 設定載入 =====
-CONFIG_PATH = Path(__file__).parent / "config.json"
+# 優先使用持久化磁碟（Zeabur Volume），否則退回本地
+_PERSISTENT_CONFIG = Path("/card/config.json")
+_LOCAL_CONFIG      = Path(__file__).parent / "config.json"
+CONFIG_PATH = _PERSISTENT_CONFIG if _PERSISTENT_CONFIG.parent.exists() else _LOCAL_CONFIG
 
 def load_config():
     """載入設定：環境變數優先，其次 config.json"""
@@ -69,8 +72,9 @@ def load_config():
 config = load_config()
 
 def save_config_to_disk():
-    """將 config 寫回 config.json"""
+    """將 config 寫回 config.json（自動建立目錄）"""
     try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
     except Exception as e:
