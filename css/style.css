@@ -958,6 +958,7 @@ textarea.node-input {
 @media (max-width: 768px) {
   .container {
     padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
   .navbar {
@@ -1089,6 +1090,7 @@ textarea.node-input {
   right: 0;
   width: 360px;
   height: 100vh;
+  height: 100dvh;
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -1216,6 +1218,7 @@ body.chat-open main {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.8rem 1rem;
+  padding-bottom: calc(0.8rem + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -1306,6 +1309,7 @@ body.chat-open main {
 @media (max-width: 480px) {
   .chat-sidebar {
     width: 100vw;
+    width: 100dvw;
   }
   body.chat-open main {
     margin-right: 0;
