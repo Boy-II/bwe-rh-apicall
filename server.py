@@ -207,6 +207,62 @@ class UserLoginRequest(BaseModel):
     password: str
 
 
+# ===== 使用者認證端點 =====
+
+@app.post("/api/auth/register")
+async def user_register(req: UserRegisterRequest):
+    """使用者申請帳號（建立 pending 狀態帳號）"""
+    username = req.username.strip()
+    users = config.setdefault("users", [])
+    if any(u["username"] == username for u in users):
+        raise HTTPException(status_code=409, detail="帳號已存在")
+    user = {
+        "id": secrets.token_hex(8),
+        "username": username,
+        "passwordHash": hash_password(req.password),
+        "status": "pending",
+        "createdAt": datetime.utcnow().isoformat()
+    }
+    users.append(user)
+    save_config_to_disk()
+    return {"message": "帳號申請成功，請等待管理員審核"}
+
+@app.post("/api/auth/login")
+async def user_login(req: UserLoginRequest):
+    """使用者登入，回傳 session token"""
+    users = config.get("users", [])
+    user = next((u for u in users if u["username"] == req.username.strip()), None)
+    if not user or not verify_password(req.password, user["passwordHash"]):
+        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
+    if user["status"] == "pending":
+        raise HTTPException(status_code=403, detail="帳號尚待管理員審核")
+    if user["status"] == "rejected":
+        raise HTTPException(status_code=403, detail="帳號申請已被拒絕")
+    token = secrets.token_hex(32)
+    user_sessions[token] = user["id"]
+    return {"token": token, "username": user["username"]}
+
+@app.post("/api/auth/logout")
+async def user_logout(request: Request):
+    """使用者登出，移除 session"""
+    token = request.headers.get("X-User-Token", "")
+    user_sessions.pop(token, None)
+    return {"success": True}
+
+@app.get("/api/auth/verify")
+async def user_verify(request: Request):
+    """驗證使用者 Token 是否有效（含帳號狀態檢查）"""
+    token = request.headers.get("X-User-Token", "")
+    if not token or token not in user_sessions:
+        return {"valid": False}
+    user_id = user_sessions[token]
+    user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
+    if not user or user["status"] != "approved":
+        user_sessions.pop(token, None)
+        return {"valid": False}
+    return {"valid": True, "username": user["username"]}
+
+
 # ===== 管理員認證端點 =====
 
 @app.post("/api/admin/login")
