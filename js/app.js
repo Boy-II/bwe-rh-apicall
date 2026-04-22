@@ -257,7 +257,7 @@ function updateAdminUI() {
     dom.adminBadge.style.display     = 'inline-flex';
     dom.btnAISettings.style.display  = 'inline-flex';
     dom.btnUserMgmt.style.display    = 'inline-flex';
-    dom.btnAdminLogout.style.display = 'inline-flex';
+    dom.btnAdminLogout.style.display = 'none';
   } else {
     dom.btnAdminLogin.style.display  = 'inline-flex';
     dom.adminBadge.style.display     = 'none';
