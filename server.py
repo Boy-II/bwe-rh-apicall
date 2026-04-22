@@ -7,13 +7,14 @@ import os
 import json
 import secrets
 import hashlib
+import hmac
 import httpx
 from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ===== 設定載入 =====
 # 優先使用持久化磁碟（Zeabur Volume），否則退回本地
@@ -106,7 +107,7 @@ def verify_password(password: str, stored: str) -> bool:
     try:
         salt, key_hex = stored.split(":", 1)
         new_key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-        return new_key.hex() == key_hex
+        return hmac.compare_digest(new_key.hex(), key_hex)
     except Exception:
         return False
 
@@ -198,8 +199,8 @@ class AIModelsRequest(BaseModel):
     aiApiKey: str = ""
 
 class UserRegisterRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=2, max_length=64)
+    password: str = Field(..., min_length=6, max_length=128)
 
 class UserLoginRequest(BaseModel):
     username: str
