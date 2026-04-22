@@ -6,6 +6,7 @@ server.py — RunningHub API 代理後端 (FastAPI)
 import os
 import json
 import secrets
+import hashlib
 import httpx
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +32,8 @@ def load_config():
         "cards": [],
         "aiBaseUrl": "",
         "aiApiKey": "",
-        "aiModel": ""
+        "aiModel": "",
+        "users": [],
     }
     if CONFIG_PATH.exists():
         try:
@@ -95,8 +97,22 @@ def save_config_to_disk():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"設定儲存失敗: {str(e)}")
 
+def hash_password(password: str) -> str:
+    salt = os.urandom(16).hex()
+    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}:{key.hex()}"
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, key_hex = stored.split(":", 1)
+        new_key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return new_key.hex() == key_hex
+    except Exception:
+        return False
+
 # ===== 管理員 Session =====
 admin_sessions: set = set()
+user_sessions: dict = {}  # token → user_id
 
 def require_admin(request: Request) -> str:
     """驗證管理員 Token，失敗則拋出 401"""
@@ -104,6 +120,13 @@ def require_admin(request: Request) -> str:
     if not token or token not in admin_sessions:
         raise HTTPException(status_code=401, detail="需要管理員權限")
     return token
+
+def require_user(request: Request) -> str:
+    """驗證使用者 Token，失敗則拋出 401；回傳 user_id"""
+    token = request.headers.get("X-User-Token", "")
+    if not token or token not in user_sessions:
+        raise HTTPException(status_code=401, detail="需要登入")
+    return user_sessions[token]
 
 def get_api_key() -> str:
     env_key = os.environ.get("RUNNINGHUB_API_KEY")
@@ -173,6 +196,14 @@ class AIConfigRequest(BaseModel):
 class AIModelsRequest(BaseModel):
     aiBaseUrl: str
     aiApiKey: str = ""
+
+class UserRegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class UserLoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 # ===== 管理員認證端點 =====
