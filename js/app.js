@@ -20,10 +20,15 @@ const state = {
   // 卡片快取
   cards: [],
   // 編輯中的卡片 (null = 新增)
-  editingCardId: null
+  editingCardId: null,
+  // 使用者認證
+  isLoggedIn: false,
+  userToken: null,
+  username: null,
 };
 
 const ADMIN_TOKEN_KEY = 'rh_admin_token';
+const USER_TOKEN_KEY = 'rh_user_token';
 
 // ===== DOM 快取 =====
 const dom = {};
@@ -81,6 +86,30 @@ function cacheDom() {
   dom.btnSaveCardModal      = document.getElementById('btnSaveCardModal');
   // Toast
   dom.toastContainer  = document.getElementById('toastContainer');
+  // 登入 Overlay
+  dom.loginOverlay            = document.getElementById('loginOverlay');
+  dom.loginPanel              = document.getElementById('loginPanel');
+  dom.registerPanel           = document.getElementById('registerPanel');
+  dom.loginUsername           = document.getElementById('loginUsername');
+  dom.loginPassword           = document.getElementById('loginPassword');
+  dom.loginError              = document.getElementById('loginError');
+  dom.btnLogin                = document.getElementById('btnLogin');
+  dom.linkToRegister          = document.getElementById('linkToRegister');
+  dom.registerUsername        = document.getElementById('registerUsername');
+  dom.registerPassword        = document.getElementById('registerPassword');
+  dom.registerPasswordConfirm = document.getElementById('registerPasswordConfirm');
+  dom.registerError           = document.getElementById('registerError');
+  dom.registerSuccess         = document.getElementById('registerSuccess');
+  dom.btnRegister             = document.getElementById('btnRegister');
+  dom.linkToLogin             = document.getElementById('linkToLogin');
+  // 使用者 navbar
+  dom.userBadge               = document.getElementById('userBadge');
+  dom.btnUserLogout           = document.getElementById('btnUserLogout');
+  // 用戶管理 Modal
+  dom.btnUserMgmt             = document.getElementById('btnUserMgmt');
+  dom.userMgmtModalOverlay    = document.getElementById('userMgmtModalOverlay');
+  dom.btnCloseUserMgmt        = document.getElementById('btnCloseUserMgmt');
+  dom.userMgmtList            = document.getElementById('userMgmtList');
 }
 
 // ===== Toast =====
@@ -90,6 +119,122 @@ function showToast(message, type = 'info') {
   toast.textContent = message;
   dom.toastContainer.appendChild(toast);
   setTimeout(() => toast.remove(), 3200);
+}
+
+// ===== 登入頁面控制 =====
+function showLoginPage() {
+  dom.loginOverlay.classList.add('active');
+}
+
+function hideLoginPage() {
+  dom.loginOverlay.classList.remove('active');
+}
+
+function showLoginForm() {
+  dom.loginPanel.style.display    = 'block';
+  dom.registerPanel.style.display = 'none';
+  dom.loginError.style.display    = 'none';
+  dom.loginUsername.value = '';
+  dom.loginPassword.value = '';
+  setTimeout(() => dom.loginUsername.focus(), 100);
+}
+
+function showRegisterForm() {
+  dom.loginPanel.style.display      = 'none';
+  dom.registerPanel.style.display   = 'block';
+  dom.registerError.style.display   = 'none';
+  dom.registerSuccess.style.display = 'none';
+  dom.btnRegister.style.display     = 'inline-flex';
+  dom.registerUsername.value        = '';
+  dom.registerPassword.value        = '';
+  dom.registerPasswordConfirm.value = '';
+  setTimeout(() => dom.registerUsername.focus(), 100);
+}
+
+async function doUserLogin() {
+  const username = dom.loginUsername.value.trim();
+  const password = dom.loginPassword.value;
+  if (!username || !password) {
+    dom.loginError.textContent   = '請輸入帳號與密碼';
+    dom.loginError.style.display = 'block';
+    return;
+  }
+  dom.btnLogin.disabled        = true;
+  dom.loginError.style.display = 'none';
+  try {
+    const { token, username: uname } = await API.userLogin(username, password);
+    state.isLoggedIn = true;
+    state.userToken  = token;
+    state.username   = uname;
+    sessionStorage.setItem(USER_TOKEN_KEY, token);
+    API.setUserToken(token);
+    hideLoginPage();
+    updateUserUI();
+    await loadAndRenderCards();
+  } catch (err) {
+    dom.loginError.textContent   = err.message;
+    dom.loginError.style.display = 'block';
+    dom.loginPassword.select();
+  } finally {
+    dom.btnLogin.disabled = false;
+  }
+}
+
+async function doUserRegister() {
+  const username = dom.registerUsername.value.trim();
+  const password = dom.registerPassword.value;
+  const confirm  = dom.registerPasswordConfirm.value;
+
+  dom.registerError.style.display   = 'none';
+  dom.registerSuccess.style.display = 'none';
+
+  if (password !== confirm) {
+    dom.registerError.textContent   = '兩次密碼不一致';
+    dom.registerError.style.display = 'block';
+    return;
+  }
+
+  dom.btnRegister.disabled = true;
+  try {
+    await API.userRegister(username, password);
+    dom.registerSuccess.style.display = 'block';
+    dom.btnRegister.style.display     = 'none';
+  } catch (err) {
+    dom.registerError.textContent   = err.message;
+    dom.registerError.style.display = 'block';
+  } finally {
+    dom.btnRegister.disabled = false;
+  }
+}
+
+async function doUserLogout() {
+  try { await API.userLogout(state.userToken); } catch (_) {}
+  state.isLoggedIn = false;
+  state.userToken  = null;
+  state.username   = null;
+  sessionStorage.removeItem(USER_TOKEN_KEY);
+  API.setUserToken(null);
+  if (state.isAdmin) {
+    try { await API.adminLogout(state.adminToken); } catch (_) {}
+    state.isAdmin    = false;
+    state.adminToken = null;
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  }
+  updateUserUI();
+  updateAdminUI();
+  showLoginPage();
+  showLoginForm();
+}
+
+function updateUserUI() {
+  if (state.isLoggedIn) {
+    dom.userBadge.textContent       = `👤 ${state.username}`;
+    dom.userBadge.style.display     = 'inline-flex';
+    dom.btnUserLogout.style.display = 'inline-flex';
+  } else {
+    dom.userBadge.style.display     = 'none';
+    dom.btnUserLogout.style.display = 'none';
+  }
 }
 
 // ===== 檢視切換 =====
@@ -105,11 +250,13 @@ function updateAdminUI() {
     dom.btnAdminLogin.style.display  = 'none';
     dom.adminBadge.style.display     = 'inline-flex';
     dom.btnAISettings.style.display  = 'inline-flex';
+    dom.btnUserMgmt.style.display    = 'inline-flex';
     dom.btnAdminLogout.style.display = 'inline-flex';
   } else {
     dom.btnAdminLogin.style.display  = 'inline-flex';
     dom.adminBadge.style.display     = 'none';
     dom.btnAISettings.style.display  = 'none';
+    dom.btnUserMgmt.style.display    = 'none';
     dom.btnAdminLogout.style.display = 'none';
   }
 }
@@ -326,6 +473,80 @@ async function saveAISettings() {
   }
 }
 
+// ===== 用戶管理 Modal（管理員）=====
+async function openUserMgmtModal() {
+  dom.userMgmtModalOverlay.classList.add('active');
+  await refreshUserList();
+}
+
+function closeUserMgmtModal() {
+  dom.userMgmtModalOverlay.classList.remove('active');
+}
+
+async function refreshUserList() {
+  dom.userMgmtList.innerHTML = '<div class="empty-hint">載入中...</div>';
+  try {
+    const { users } = await API.adminGetUsers(state.adminToken);
+    if (users.length === 0) {
+      dom.userMgmtList.innerHTML = '<div class="empty-hint">尚無用戶申請</div>';
+      return;
+    }
+    dom.userMgmtList.innerHTML = '';
+    const statusOrder = { pending: 0, approved: 1, rejected: 2 };
+    users.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+    users.forEach(user => {
+      const el = document.createElement('div');
+      el.className = 'user-list-item';
+      const statusLabel = { pending: '⏳ 待審核', approved: '✅ 已批准', rejected: '❌ 已拒絕' }[user.status] || user.status;
+      el.innerHTML = `
+        <div class="user-info">
+          <span class="user-name">${escapeHtml(user.username)}</span>
+          <span class="user-status user-status-${user.status}">${statusLabel}</span>
+          <span class="user-date">${new Date(user.createdAt).toLocaleDateString('zh-TW')}</span>
+        </div>
+        <div class="user-actions">
+          ${user.status !== 'approved' ? `<button class="btn btn-success btn-sm user-approve-btn" data-id="${user.id}">批准</button>` : ''}
+          ${user.status !== 'rejected' ? `<button class="btn btn-sm user-reject-btn" data-id="${user.id}">拒絕</button>` : ''}
+          <button class="btn btn-danger btn-sm user-delete-btn" data-id="${user.id}">刪除</button>
+        </div>
+      `;
+      dom.userMgmtList.appendChild(el);
+    });
+
+    dom.userMgmtList.querySelectorAll('.user-approve-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await API.adminApproveUser(state.adminToken, btn.dataset.id);
+          showToast('已批准用戶', 'success');
+          await refreshUserList();
+        } catch (e) { showToast(`失敗: ${e.message}`, 'error'); }
+      });
+    });
+    dom.userMgmtList.querySelectorAll('.user-reject-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await API.adminRejectUser(state.adminToken, btn.dataset.id);
+          showToast('已拒絕用戶', 'info');
+          await refreshUserList();
+        } catch (e) { showToast(`失敗: ${e.message}`, 'error'); }
+      });
+    });
+    dom.userMgmtList.querySelectorAll('.user-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.closest('.user-list-item').querySelector('.user-name').textContent;
+        if (!confirm(`確定要刪除用戶「${name}」？`)) return;
+        try {
+          await API.adminDeleteUser(state.adminToken, btn.dataset.id);
+          showToast('已刪除用戶', 'info');
+          await refreshUserList();
+        } catch (e) { showToast(`失敗: ${e.message}`, 'error'); }
+      });
+    });
+  } catch (e) {
+    dom.userMgmtList.innerHTML = `<div class="empty-hint" style="color:var(--danger);">載入失敗: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
 // ===== 卡片 Modal（管理員）=====
 let selectedIcon  = '🎨';
 let selectedColor = '#6C5CE7';
@@ -536,6 +757,20 @@ function formatTime(isoStr) {
   } catch { return ''; }
 }
 
+function bindLoginEvents() {
+  dom.btnLogin.addEventListener('click', doUserLogin);
+  dom.loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') doUserLogin(); });
+  dom.linkToRegister.addEventListener('click', (e) => { e.preventDefault(); showRegisterForm(); });
+  dom.linkToLogin.addEventListener('click', (e) => { e.preventDefault(); showLoginForm(); });
+  dom.btnRegister.addEventListener('click', doUserRegister);
+  dom.btnUserLogout.addEventListener('click', doUserLogout);
+  dom.btnUserMgmt.addEventListener('click', openUserMgmtModal);
+  dom.btnCloseUserMgmt.addEventListener('click', closeUserMgmtModal);
+  dom.userMgmtModalOverlay.addEventListener('click', (e) => {
+    if (e.target === dom.userMgmtModalOverlay) closeUserMgmtModal();
+  });
+}
+
 // ===== 事件綁定 =====
 function bindEvents() {
   dom.navHome.addEventListener('click', () => { switchView('home'); loadAndRenderCards(); });
@@ -579,15 +814,43 @@ function bindEvents() {
     if (dom.adminModalOverlay.classList.contains('active'))    closeAdminModal();
     if (dom.aiSettingsModalOverlay.classList.contains('active')) closeAISettingsModal();
     if (dom.cardModalOverlay.classList.contains('active'))      closeCardModal();
+    if (dom.userMgmtModalOverlay.classList.contains('active')) closeUserMgmtModal();
   });
 }
 
 // ===== 初始化 =====
 async function init() {
   cacheDom();
+  bindLoginEvents();
   bindEvents();
   ChatModule.init({ onApplyPrompt: applyPromptToForm });
   await Config.init();
+
+  // 使用者認證檢查
+  const savedUserToken = sessionStorage.getItem(USER_TOKEN_KEY);
+  if (savedUserToken) {
+    try {
+      const { valid, username } = await API.userVerify(savedUserToken);
+      if (valid) {
+        state.isLoggedIn = true;
+        state.userToken  = savedUserToken;
+        state.username   = username;
+        API.setUserToken(savedUserToken);
+      } else {
+        sessionStorage.removeItem(USER_TOKEN_KEY);
+      }
+    } catch (_) {
+      sessionStorage.removeItem(USER_TOKEN_KEY);
+    }
+  }
+
+  if (!state.isLoggedIn) {
+    showLoginForm();
+    return;
+  }
+
+  hideLoginPage();
+  updateUserUI();
 
   // 嘗試恢復管理員 Session
   const savedToken = sessionStorage.getItem(ADMIN_TOKEN_KEY);
