@@ -230,6 +230,13 @@ async def user_register(req: UserRegisterRequest):
 @app.post("/api/auth/login")
 async def user_login(req: UserLoginRequest):
     """使用者登入，回傳 session token"""
+    # 管理員帳號直接以 ADMIN_PASSWORD 登入（不需申請審核）
+    admin_pw = config.get("adminPassword", "")
+    if req.username.strip().lower() == "admin" and admin_pw and req.password == admin_pw:
+        token = secrets.token_hex(32)
+        user_sessions[token] = "__admin__"
+        return {"token": token, "username": "admin"}
+
     users = config.get("users", [])
     user = next((u for u in users if u["username"] == req.username.strip().lower()), None)
     if not user or not verify_password(req.password, user["passwordHash"]):
@@ -256,6 +263,8 @@ async def user_verify(request: Request):
     if not token or token not in user_sessions:
         return {"valid": False}
     user_id = user_sessions[token]
+    if user_id == "__admin__":
+        return {"valid": True, "username": "admin"}
     user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
     if not user or user["status"] != "approved":
         user_sessions.pop(token, None)
