@@ -292,8 +292,9 @@ async def admin_verify(request: Request):
 # ===== 卡片管理端點 =====
 
 @app.get("/api/cards")
-async def get_cards():
-    """取得所有應用卡片（公開）"""
+async def get_cards(request: Request):
+    """取得所有應用卡片（需登入）"""
+    require_user(request)
     return {"cards": config.get("cards", [])}
 
 @app.post("/api/admin/cards")
@@ -347,8 +348,9 @@ async def admin_delete_card(card_id: str, request: Request):
 # ===== RunningHub API 代理端點 =====
 
 @app.post("/api/proxy/getNodeInfo")
-async def proxy_get_node_info(req: NodeInfoRequest):
+async def proxy_get_node_info(request: Request, req: NodeInfoRequest):
     """代理：獲取節點資訊（GET /api/webapp/apiCallDemo?apiKey=&webappId=）"""
+    require_user(request)
     base = get_base_url()
     url = f"{base}/api/webapp/apiCallDemo"
     try:
@@ -363,26 +365,30 @@ async def proxy_get_node_info(req: NodeInfoRequest):
         raise HTTPException(status_code=502, detail=f"請求失敗: {str(e)}")
 
 @app.post("/api/proxy/submitTask")
-async def proxy_submit_task(req: SubmitTaskRequest):
+async def proxy_submit_task(request: Request, req: SubmitTaskRequest):
     """代理：提交任務（POST /task/openapi/ai-app/run，body apiKey）"""
+    require_user(request)
     return await forward_json_with_apikey("/task/openapi/ai-app/run", {
         "webappId": req.webappId,
         "nodeInfoList": req.nodeInfoList
     })
 
 @app.post("/api/proxy/queryTaskOutputs")
-async def proxy_query_outputs(req: TaskQueryRequest):
+async def proxy_query_outputs(request: Request, req: TaskQueryRequest):
     """代理：查詢任務狀態與結果（v2 Bearer，支援 status 欄位）"""
+    require_user(request)
     return await forward_json("/openapi/v2/query", {
         "taskId": req.taskId
     })
 
 @app.post("/api/proxy/uploadFile")
 async def proxy_upload_file(
+    request: Request,
     file: UploadFile = File(...),
     fileType: str = Form(default="image")
 ):
     """代理：上傳檔案（POST /task/openapi/upload，form body apiKey）"""
+    require_user(request)
     base = get_base_url()
     url = f"{base}/task/openapi/upload"
     file_content = await file.read()
@@ -397,8 +403,9 @@ async def proxy_upload_file(
         raise HTTPException(status_code=502, detail=f"上傳失敗: {str(e)}")
 
 @app.post("/api/proxy/getAccountStatus")
-async def proxy_get_account():
+async def proxy_get_account(request: Request):
     """代理：取得帳戶狀態"""
+    require_user(request)
     return await forward_json_with_apikey("/api/user/getAccountStatus", {})
 
 @app.get("/api/config/status")
@@ -422,8 +429,9 @@ def get_gemini_api_key() -> str:
     return config.get("geminiApiKey", "")
 
 @app.post("/api/proxy/gemini")
-async def proxy_gemini(req: GeminiChatRequest):
+async def proxy_gemini(request: Request, req: GeminiChatRequest):
     """代理：呼叫 Gemini 2.5 Flash API"""
+    require_user(request)
     key = get_gemini_api_key()
     if not key:
         raise HTTPException(status_code=503, detail="Gemini API Key 未設定")
@@ -638,8 +646,9 @@ def _build_ai_system_prompt(context: dict) -> str:
     return "\n".join(parts)
 
 @app.post("/api/proxy/chat")
-async def proxy_chat(req: AIChatRequest):
+async def proxy_chat(request: Request, req: AIChatRequest):
     """統一聊天代理：優先使用 OpenAI 格式設定，否則回退 Gemini"""
+    require_user(request)
     ai_base = config.get("aiBaseUrl", "").rstrip("/")
     ai_key = config.get("aiApiKey", "")
     ai_model = config.get("aiModel", "")
