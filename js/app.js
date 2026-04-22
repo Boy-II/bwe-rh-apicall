@@ -188,6 +188,12 @@ async function doUserRegister() {
   dom.registerError.style.display   = 'none';
   dom.registerSuccess.style.display = 'none';
 
+  if (!username || !password) {
+    dom.registerError.textContent   = '請輸入帳號與密碼';
+    dom.registerError.style.display = 'block';
+    return;
+  }
+
   if (password !== confirm) {
     dom.registerError.textContent   = '兩次密碼不一致';
     dom.registerError.style.display = 'block';
@@ -845,6 +851,7 @@ async function init() {
   }
 
   if (!state.isLoggedIn) {
+    showLoginPage();
     showLoginForm();
     return;
   }
