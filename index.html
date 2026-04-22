@@ -9,6 +9,49 @@
 </head>
 <body>
 
+<!-- ===== 登入/申請帳號 Overlay ===== -->
+<div id="loginOverlay" class="login-overlay active">
+  <!-- 登入表單 -->
+  <div id="loginPanel" class="login-panel">
+    <div class="login-logo">🚀</div>
+    <h1 class="login-title">BWE-RH APICall</h1>
+    <p class="login-subtitle">AI 應用呼叫平台</p>
+    <div class="form-group">
+      <label class="form-label">帳號</label>
+      <input id="loginUsername" type="text" class="form-input" placeholder="請輸入帳號" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">密碼</label>
+      <input id="loginPassword" type="password" class="form-input" placeholder="請輸入密碼" autocomplete="current-password" />
+    </div>
+    <div id="loginError" class="auth-message auth-error" style="display:none;"></div>
+    <button id="btnLogin" class="btn btn-primary" style="width:100%;margin-top:0.5rem;">登入</button>
+    <p class="login-switch">還沒有帳號？<a href="#" id="linkToRegister">申請帳號</a></p>
+  </div>
+  <!-- 申請帳號表單 -->
+  <div id="registerPanel" class="login-panel" style="display:none;">
+    <div class="login-logo">📝</div>
+    <h1 class="login-title">申請帳號</h1>
+    <p class="login-subtitle">送出後等待管理員審核</p>
+    <div class="form-group">
+      <label class="form-label">帳號（至少 2 字元）</label>
+      <input id="registerUsername" type="text" class="form-input" placeholder="輸入帳號" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">密碼（至少 6 字元）</label>
+      <input id="registerPassword" type="password" class="form-input" placeholder="輸入密碼" autocomplete="new-password" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">確認密碼</label>
+      <input id="registerPasswordConfirm" type="password" class="form-input" placeholder="再次輸入密碼" autocomplete="new-password" />
+    </div>
+    <div id="registerError" class="auth-message auth-error" style="display:none;"></div>
+    <div id="registerSuccess" class="auth-message auth-success" style="display:none;">帳號申請成功！請等待管理員審核後再登入。</div>
+    <button id="btnRegister" class="btn btn-primary" style="width:100%;margin-top:0.5rem;">送出申請</button>
+    <p class="login-switch"><a href="#" id="linkToLogin">← 返回登入</a></p>
+  </div>
+</div>
+
   <!-- ===== 導航列 ===== -->
   <nav class="navbar">
     <a class="navbar-brand" id="navHome">
@@ -23,7 +66,11 @@
       <!-- 已登入：顯示管理員標識 + AI 設定 + 登出按鈕（預設隱藏） -->
       <span class="admin-badge" id="adminBadge" style="display:none;">👑 管理中</span>
       <button class="btn btn-ghost" id="btnAISettings" style="display:none;" title="AI 助手設定">🤖 AI 設定</button>
+      <button class="btn btn-ghost" id="btnUserMgmt" style="display:none;" title="用戶管理">👥 用戶</button>
       <button class="btn btn-ghost btn-danger-ghost" id="btnAdminLogout" style="display:none;">登出</button>
+      <!-- 已登入使用者資訊（預設隱藏）-->
+      <span id="userBadge" class="user-badge" style="display:none;"></span>
+      <button class="btn btn-ghost btn-danger-ghost" id="btnUserLogout" style="display:none;">登出</button>
     </div>
   </nav>
 
@@ -169,6 +216,21 @@
       </div>
     </div>
   </div>
+
+  <!-- ===== Modal：用戶管理（管理員專用）===== -->
+<div class="modal-overlay" id="userMgmtModalOverlay">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <h2>👥 用戶管理</h2>
+      <button class="btn btn-icon" id="btnCloseUserMgmt">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="userMgmtList" class="user-list">
+        <div class="empty-hint">載入中...</div>
+      </div>
+    </div>
+  </div>
+</div>
 
   <!-- ===== AI 助手側邊欄 ===== -->
   <aside class="chat-sidebar" id="chatSidebar">
