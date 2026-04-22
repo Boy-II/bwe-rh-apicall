@@ -4,11 +4,28 @@
 
 const API = (() => {
 
+  let _userToken = null;
+
+  function setUserToken(token) {
+    _userToken = token;
+  }
+
+  async function getJSON(endpoint) {
+    const headers = _userToken ? { 'X-User-Token': _userToken } : {};
+    const res = await fetch(endpoint, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
   /** 通用 JSON POST 請求（呼叫本地後端） */
   async function postJSON(endpoint, body = {}, headers = {}) {
+    const authHeaders = _userToken ? { 'X-User-Token': _userToken } : {};
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', ...authHeaders, ...headers },
       body: JSON.stringify(body)
     });
     if (!res.ok) {
@@ -108,8 +125,7 @@ const API = (() => {
   // ===== 卡片管理 API =====
 
   async function getCards() {
-    const res = await fetch('/api/cards');
-    const data = await res.json();
+    const data = await getJSON('/api/cards');
     return data.cards || [];
   }
 
@@ -148,6 +164,44 @@ const API = (() => {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
+    return await res.json();
+  }
+
+  // ===== 使用者認證 API =====
+
+  async function userRegister(username, password) {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function userLogin(username, password) {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function userLogout(token) {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'X-User-Token': token }
+    });
+  }
+
+  async function userVerify(token) {
+    const res = await fetch('/api/auth/verify', {
+      headers: { 'X-User-Token': token }
+    });
     return await res.json();
   }
 
@@ -190,11 +244,63 @@ const API = (() => {
     return await res.json();
   }
 
+  // ===== 用戶管理 API（管理員）=====
+
+  async function adminGetUsers(token) {
+    const res = await fetch('/api/admin/users', {
+      headers: { 'X-Admin-Token': token }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async function adminApproveUser(token, userId) {
+    const res = await fetch(`/api/admin/users/${userId}/approve`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': token }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async function adminRejectUser(token, userId) {
+    const res = await fetch(`/api/admin/users/${userId}/reject`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': token }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async function adminDeleteUser(token, userId) {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Token': token }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
   return {
     getNodeInfo, uploadFile, submitTask, queryTaskOutputs, pollTask, getConfigStatus,
     adminLogin, adminLogout, adminVerify,
     getCards, adminAddCard, adminUpdateCard, adminDeleteCard,
-    adminGetAIConfig, adminSaveAIConfig, adminFetchAIModels
+    adminGetAIConfig, adminSaveAIConfig, adminFetchAIModels,
+    setUserToken,
+    userRegister, userLogin, userLogout, userVerify,
+    adminGetUsers, adminApproveUser, adminRejectUser, adminDeleteUser
   };
 })();
 
