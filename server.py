@@ -544,6 +544,66 @@ async def fetch_ai_models(req: AIModelsRequest, request: Request):
         raise HTTPException(status_code=502, detail=f"無法取得模型列表: {str(e)}")
 
 
+# ===== 用戶管理端點（管理員）=====
+
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request):
+    """列出所有用戶（管理員）"""
+    require_admin(request)
+    users = config.get("users", [])
+    return {
+        "users": [
+            {
+                "id": u["id"],
+                "username": u["username"],
+                "status": u["status"],
+                "createdAt": u["createdAt"]
+            }
+            for u in users
+        ]
+    }
+
+@app.post("/api/admin/users/{user_id}/approve")
+async def admin_approve_user(user_id: str, request: Request):
+    """批准用戶帳號（管理員）"""
+    require_admin(request)
+    user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
+    if not user:
+        raise HTTPException(status_code=404, detail="用戶不存在")
+    user["status"] = "approved"
+    save_config_to_disk()
+    return {"success": True}
+
+@app.post("/api/admin/users/{user_id}/reject")
+async def admin_reject_user(user_id: str, request: Request):
+    """拒絕用戶帳號，並踢出現有 session（管理員）"""
+    require_admin(request)
+    user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
+    if not user:
+        raise HTTPException(status_code=404, detail="用戶不存在")
+    user["status"] = "rejected"
+    to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
+    for t in to_remove:
+        del user_sessions[t]
+    save_config_to_disk()
+    return {"success": True}
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, request: Request):
+    """刪除用戶帳號（管理員）"""
+    require_admin(request)
+    users = config.get("users", [])
+    new_users = [u for u in users if u["id"] != user_id]
+    if len(new_users) == len(users):
+        raise HTTPException(status_code=404, detail="用戶不存在")
+    config["users"] = new_users
+    to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
+    for t in to_remove:
+        del user_sessions[t]
+    save_config_to_disk()
+    return {"success": True}
+
+
 # ===== OpenAI 格式聊天代理端點 =====
 
 def _build_ai_system_prompt(context: dict) -> str:
