@@ -230,12 +230,14 @@ async def user_register(req: UserRegisterRequest):
 @app.post("/api/auth/login")
 async def user_login(req: UserLoginRequest):
     """使用者登入，回傳 session token"""
-    # 管理員帳號直接以 ADMIN_PASSWORD 登入（不需申請審核）
+    # 管理員帳號直接以 ADMIN_PASSWORD 登入，同時核發 user + admin token
     admin_pw = config.get("adminPassword", "")
     if req.username.strip().lower() == "admin" and admin_pw and req.password == admin_pw:
         token = secrets.token_hex(32)
         user_sessions[token] = "__admin__"
-        return {"token": token, "username": "admin"}
+        admin_token = secrets.token_hex(32)
+        admin_sessions.add(admin_token)
+        return {"token": token, "username": "admin", "adminToken": admin_token}
 
     users = config.get("users", [])
     user = next((u for u in users if u["username"] == req.username.strip().lower()), None)

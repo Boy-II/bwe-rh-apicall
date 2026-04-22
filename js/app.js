@@ -162,14 +162,20 @@ async function doUserLogin() {
   dom.btnLogin.disabled        = true;
   dom.loginError.style.display = 'none';
   try {
-    const { token, username: uname } = await API.userLogin(username, password);
+    const { token, username: uname, adminToken } = await API.userLogin(username, password);
     state.isLoggedIn = true;
     state.userToken  = token;
     state.username   = uname;
     sessionStorage.setItem(USER_TOKEN_KEY, token);
     API.setUserToken(token);
+    if (adminToken) {
+      state.isAdmin    = true;
+      state.adminToken = adminToken;
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
+    }
     hideLoginPage();
     updateUserUI();
+    updateAdminUI();
     await loadAndRenderCards();
   } catch (err) {
     dom.loginError.textContent   = err.message;
