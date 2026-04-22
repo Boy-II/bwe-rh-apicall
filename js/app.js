@@ -2,12 +2,12 @@
  * app.js — 應用入口：路由、事件、管理員權限控制
  */
 
-import Config from './config.js?v=8';
-import CardManager from './cardManager.js?v=8';
-import NodeRenderer from './nodeRenderer.js?v=8';
-import TaskManager from './taskManager.js?v=8';
-import API from './api.js?v=8';
-import ChatModule from './chatModule.js?v=8';
+import Config from './config.js';
+import CardManager from './cardManager.js';
+import NodeRenderer from './nodeRenderer.js';
+import TaskManager from './taskManager.js';
+import API from './api.js';
+import ChatModule from './chatModule.js';
 
 // ===== 全域狀態 =====
 const state = {
