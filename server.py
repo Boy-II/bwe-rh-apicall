@@ -584,7 +584,7 @@ async def admin_reject_user(user_id: str, request: Request):
     user["status"] = "rejected"
     to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
     for t in to_remove:
-        del user_sessions[t]
+        user_sessions.pop(t, None)
     save_config_to_disk()
     return {"success": True}
 
@@ -599,7 +599,7 @@ async def admin_delete_user(user_id: str, request: Request):
     config["users"] = new_users
     to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
     for t in to_remove:
-        del user_sessions[t]
+        user_sessions.pop(t, None)
     save_config_to_disk()
     return {"success": True}
 
