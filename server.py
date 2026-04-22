@@ -212,7 +212,7 @@ class UserLoginRequest(BaseModel):
 @app.post("/api/auth/register")
 async def user_register(req: UserRegisterRequest):
     """使用者申請帳號（建立 pending 狀態帳號）"""
-    username = req.username.strip()
+    username = req.username.strip().lower()
     users = config.setdefault("users", [])
     if any(u["username"] == username for u in users):
         raise HTTPException(status_code=409, detail="帳號已存在")
@@ -231,7 +231,7 @@ async def user_register(req: UserRegisterRequest):
 async def user_login(req: UserLoginRequest):
     """使用者登入，回傳 session token"""
     users = config.get("users", [])
-    user = next((u for u in users if u["username"] == req.username.strip()), None)
+    user = next((u for u in users if u["username"] == req.username.strip().lower()), None)
     if not user or not verify_password(req.password, user["passwordHash"]):
         raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
     if user["status"] == "pending":
