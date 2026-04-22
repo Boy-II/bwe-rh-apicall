@@ -1355,3 +1355,142 @@ body.chat-open main {
 .modal.modal-sm {
   max-width: 380px;
 }
+
+/* ===== 登入 Overlay ===== */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  z-index: 900;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.login-overlay.active {
+  display: flex;
+}
+.login-panel {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 2.5rem 2rem;
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-card), var(--shadow-glow);
+}
+.login-logo {
+  font-size: 2.5rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+.login-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+.login-subtitle {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+.login-switch {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+}
+.login-switch a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.login-switch a:hover {
+  text-decoration: underline;
+}
+.auth-message {
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+.auth-error {
+  background: rgba(225, 112, 85, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+.auth-success {
+  background: rgba(0, 184, 148, 0.12);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+/* ===== 用戶徽章（navbar）===== */
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 0.3rem 0.75rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ===== 用戶管理 Modal ===== */
+.user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.user-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+.user-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-status {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.user-status-pending  { color: var(--warning); }
+.user-status-approved { color: var(--success); }
+.user-status-rejected { color: var(--danger); }
+.user-date {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.user-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.btn-sm {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+}
