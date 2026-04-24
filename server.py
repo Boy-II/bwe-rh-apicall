@@ -396,17 +396,16 @@ async def proxy_query_outputs(request: Request, req: TaskQueryRequest):
 async def proxy_upload_file(
     request: Request,
     file: UploadFile = File(...),
-    fileType: str = Form(default="image")
 ):
-    """代理：上傳檔案（POST /task/openapi/upload，form body apiKey）"""
+    """代理：上傳檔案（POST /openapi/v2/media/upload/binary，Bearer auth）"""
     require_user(request)
     base = get_base_url()
-    url = f"{base}/task/openapi/upload"
+    url = f"{base}/openapi/v2/media/upload/binary"
     file_content = await file.read()
     try:
         resp = await http_client.post(
             url,
-            data={"apiKey": get_api_key(), "fileType": fileType},
+            headers={"Authorization": f"Bearer {get_api_key()}"},
             files={"file": (file.filename, file_content, file.content_type or "application/octet-stream")}
         )
         return resp.json()

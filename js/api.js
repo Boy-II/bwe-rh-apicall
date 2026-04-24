@@ -48,10 +48,9 @@ const API = (() => {
     return [];
   }
 
-  async function uploadFile(file, fileType = 'image') {
+  async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('fileType', fileType);
     const authHeaders = _userToken ? { 'X-User-Token': _userToken } : {};
     const res = await fetch('/api/proxy/uploadFile', { method: 'POST', headers: authHeaders, body: formData });
     if (!res.ok) {
