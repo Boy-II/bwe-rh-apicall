@@ -9,7 +9,8 @@ import secrets
 import hashlib
 import hmac
 import httpx
-from datetime import datetime
+import jwt
+from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -111,23 +112,50 @@ def verify_password(password: str, stored: str) -> bool:
     except Exception:
         return False
 
-# ===== 管理員 Session =====
+# ===== Session =====
 admin_sessions: set = set()
-user_sessions: dict = {}  # token → user_id
+
+_JWT_ALGORITHM = "HS256"
+_JWT_EXPIRY_DAYS = 30
+
+def _get_jwt_secret() -> str:
+    env_secret = os.environ.get("JWT_SECRET")
+    if env_secret:
+        return env_secret
+    if "jwtSecret" not in config:
+        config["jwtSecret"] = secrets.token_hex(32)
+        save_config_to_disk()
+    return config["jwtSecret"]
+
+def _create_user_token(user_id: str) -> str:
+    payload = {"user_id": user_id, "exp": datetime.utcnow() + timedelta(days=_JWT_EXPIRY_DAYS)}
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=_JWT_ALGORITHM)
+
+def _decode_user_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, _get_jwt_secret(), algorithms=[_JWT_ALGORITHM])
+        return payload["user_id"]
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token 已過期，請重新登入")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="需要登入")
 
 def require_admin(request: Request) -> str:
-    """驗證管理員 Token，失敗則拋出 401"""
     token = request.headers.get("X-Admin-Token", "")
     if not token or token not in admin_sessions:
         raise HTTPException(status_code=401, detail="需要管理員權限")
     return token
 
 def require_user(request: Request) -> str:
-    """驗證使用者 Token，失敗則拋出 401；回傳 user_id"""
     token = request.headers.get("X-User-Token", "")
-    if not token or token not in user_sessions:
+    if not token:
         raise HTTPException(status_code=401, detail="需要登入")
-    return user_sessions[token]
+    user_id = _decode_user_token(token)
+    if user_id != "__admin__":
+        user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
+        if not user or user["status"] != "approved":
+            raise HTTPException(status_code=401, detail="帳號狀態異常，請重新登入")
+    return user_id
 
 def get_api_key() -> str:
     env_key = os.environ.get("RUNNINGHUB_API_KEY")
@@ -233,8 +261,7 @@ async def user_login(req: UserLoginRequest):
     # 管理員帳號直接以 ADMIN_PASSWORD 登入，同時核發 user + admin token
     admin_pw = config.get("adminPassword", "")
     if req.username.strip().lower() == "admin" and admin_pw and req.password == admin_pw:
-        token = secrets.token_hex(32)
-        user_sessions[token] = "__admin__"
+        token = _create_user_token("__admin__")
         admin_token = secrets.token_hex(32)
         admin_sessions.add(admin_token)
         return {"token": token, "username": "admin", "adminToken": admin_token}
@@ -247,29 +274,28 @@ async def user_login(req: UserLoginRequest):
         raise HTTPException(status_code=403, detail="帳號尚待管理員審核")
     if user["status"] == "rejected":
         raise HTTPException(status_code=403, detail="帳號申請已被拒絕")
-    token = secrets.token_hex(32)
-    user_sessions[token] = user["id"]
+    token = _create_user_token(user["id"])
     return {"token": token, "username": user["username"]}
 
 @app.post("/api/auth/logout")
 async def user_logout(request: Request):
-    """使用者登出，移除 session"""
-    token = request.headers.get("X-User-Token", "")
-    user_sessions.pop(token, None)
+    """使用者登出（JWT stateless，client 端清除 token）"""
     return {"success": True}
 
 @app.get("/api/auth/verify")
 async def user_verify(request: Request):
-    """驗證使用者 Token 是否有效（含帳號狀態檢查）"""
+    """驗證使用者 JWT 是否有效"""
     token = request.headers.get("X-User-Token", "")
-    if not token or token not in user_sessions:
+    if not token:
         return {"valid": False}
-    user_id = user_sessions[token]
+    try:
+        user_id = _decode_user_token(token)
+    except HTTPException:
+        return {"valid": False}
     if user_id == "__admin__":
         return {"valid": True, "username": "admin"}
     user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
     if not user or user["status"] != "approved":
-        user_sessions.pop(token, None)
         return {"valid": False}
     return {"valid": True, "username": user["username"]}
 
@@ -592,15 +618,12 @@ async def admin_approve_user(user_id: str, request: Request):
 
 @app.post("/api/admin/users/{user_id}/reject")
 async def admin_reject_user(user_id: str, request: Request):
-    """拒絕用戶帳號，並踢出現有 session（管理員）"""
+    """拒絕用戶帳號（管理員）；JWT stateless，下次 require_user 呼叫時自動拒絕"""
     require_admin(request)
     user = next((u for u in config.get("users", []) if u["id"] == user_id), None)
     if not user:
         raise HTTPException(status_code=404, detail="用戶不存在")
     user["status"] = "rejected"
-    to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
-    for t in to_remove:
-        user_sessions.pop(t, None)
     save_config_to_disk()
     return {"success": True}
 
@@ -613,9 +636,6 @@ async def admin_delete_user(user_id: str, request: Request):
     if len(new_users) == len(users):
         raise HTTPException(status_code=404, detail="用戶不存在")
     config["users"] = new_users
-    to_remove = [t for t, uid in user_sessions.items() if uid == user_id]
-    for t in to_remove:
-        user_sessions.pop(t, None)
     save_config_to_disk()
     return {"success": True}
 
