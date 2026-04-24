@@ -403,7 +403,7 @@ async def proxy_get_node_info(request: Request, req: NodeInfoRequest):
 
 @app.post("/api/proxy/submitTask")
 async def proxy_submit_task(request: Request, req: SubmitTaskRequest):
-    """代理：提交任務（POST /task/openapi/ai-app/run，body apiKey）"""
+    """代理：提交任務（POST /api/webapp/submitTask，body apiKey）"""
     require_user(request)
     return await forward_json_with_apikey("/task/openapi/ai-app/run", {
         "webappId": req.webappId,
