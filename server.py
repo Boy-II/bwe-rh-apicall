@@ -385,9 +385,8 @@ async def admin_delete_card(card_id: str, request: Request):
 # ===== RunningHub API 代理端點 =====
 
 @app.post("/api/proxy/getNodeInfo")
-async def proxy_get_node_info(request: Request, req: NodeInfoRequest):
+async def proxy_get_node_info(req: NodeInfoRequest):
     """代理：獲取節點資訊（GET /api/webapp/apiCallDemo?apiKey=&webappId=）"""
-    require_user(request)
     base = get_base_url()
     url = f"{base}/api/webapp/apiCallDemo"
     try:
@@ -402,18 +401,16 @@ async def proxy_get_node_info(request: Request, req: NodeInfoRequest):
         raise HTTPException(status_code=502, detail=f"請求失敗: {str(e)}")
 
 @app.post("/api/proxy/submitTask")
-async def proxy_submit_task(request: Request, req: SubmitTaskRequest):
-    """代理：提交任務（POST /api/webapp/submitTask，body apiKey）"""
-    require_user(request)
+async def proxy_submit_task(req: SubmitTaskRequest):
+    """代理：提交任務（POST /task/openapi/ai-app/run，body apiKey）"""
     return await forward_json_with_apikey("/task/openapi/ai-app/run", {
         "webappId": req.webappId,
         "nodeInfoList": req.nodeInfoList
     })
 
 @app.post("/api/proxy/queryTaskOutputs")
-async def proxy_query_outputs(request: Request, req: TaskQueryRequest):
+async def proxy_query_outputs(req: TaskQueryRequest):
     """代理：查詢任務狀態與結果（v2 Bearer，支援 status 欄位）"""
-    require_user(request)
     return await forward_json("/openapi/v2/query", {
         "taskId": req.taskId
     })
@@ -437,9 +434,8 @@ async def proxy_upload_file(
         raise HTTPException(status_code=502, detail=f"上傳失敗: {str(e)}")
 
 @app.post("/api/proxy/getAccountStatus")
-async def proxy_get_account(request: Request):
+async def proxy_get_account():
     """代理：取得帳戶狀態"""
-    require_user(request)
     return await forward_json_with_apikey("/api/user/getAccountStatus", {})
 
 @app.get("/api/config/status")
