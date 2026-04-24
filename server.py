@@ -394,11 +394,9 @@ async def proxy_query_outputs(request: Request, req: TaskQueryRequest):
 
 @app.post("/api/proxy/uploadFile")
 async def proxy_upload_file(
-    request: Request,
     file: UploadFile = File(...),
 ):
     """代理：上傳檔案（POST /openapi/v2/media/upload/binary，Bearer auth）"""
-    require_user(request)
     base = get_base_url()
     url = f"{base}/openapi/v2/media/upload/binary"
     file_content = await file.read()

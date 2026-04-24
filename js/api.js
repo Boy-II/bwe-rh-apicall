@@ -51,8 +51,7 @@ const API = (() => {
   async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
-    const authHeaders = _userToken ? { 'X-User-Token': _userToken } : {};
-    const res = await fetch('/api/proxy/uploadFile', { method: 'POST', headers: authHeaders, body: formData });
+    const res = await fetch('/api/proxy/uploadFile', { method: 'POST', body: formData });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || `上傳失敗: HTTP ${res.status}`);
