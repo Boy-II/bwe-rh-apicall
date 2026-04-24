@@ -459,9 +459,8 @@ def get_gemini_api_key() -> str:
     return config.get("geminiApiKey", "")
 
 @app.post("/api/proxy/gemini")
-async def proxy_gemini(request: Request, req: GeminiChatRequest):
+async def proxy_gemini(req: GeminiChatRequest):
     """代理：呼叫 Gemini 2.5 Flash API"""
-    require_user(request)
     key = get_gemini_api_key()
     if not key:
         raise HTTPException(status_code=503, detail="Gemini API Key 未設定")
@@ -670,9 +669,8 @@ def _build_ai_system_prompt(context: dict) -> str:
     return "\n".join(parts)
 
 @app.post("/api/proxy/chat")
-async def proxy_chat(request: Request, req: AIChatRequest):
+async def proxy_chat(req: AIChatRequest):
     """統一聊天代理：優先使用 OpenAI 格式設定，否則回退 Gemini"""
-    require_user(request)
     ai_base = config.get("aiBaseUrl", "").rstrip("/")
     ai_key = config.get("aiApiKey", "")
     ai_model = config.get("aiModel", "")
