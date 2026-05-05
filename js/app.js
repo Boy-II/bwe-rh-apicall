@@ -4,7 +4,7 @@
 
 import Config from './config.js?v=9';
 import CardManager from './cardManager.js?v=9';
-import NodeRenderer from './nodeRenderer.js?v=9';
+import NodeRenderer from './nodeRenderer.js?v=10';
 import TaskManager from './taskManager.js?v=9';
 import API from './api.js?v=9';
 import ChatModule from './chatModule.js?v=9';

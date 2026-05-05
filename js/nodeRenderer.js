@@ -113,6 +113,7 @@ const NodeRenderer = (() => {
   function createFileInput(node, index, fileType) {
     const container = document.createElement('div');
     container.className = 'file-upload-area';
+    container.tabIndex = 0;
 
     // 當前值顯示
     const current = document.createElement('div');
@@ -141,6 +142,10 @@ const NodeRenderer = (() => {
     label.htmlFor = `file-${index}`;
     label.innerHTML = `<span class="file-icon">📂</span> 選擇${fileType === 'image' ? '圖片' : fileType === 'video' ? '影片' : '音訊'}`;
 
+    const hint = document.createElement('div');
+    hint.className = 'file-drop-hint';
+    hint.textContent = `或將${fileType === 'image' ? '圖片' : fileType === 'video' ? '影片' : '音訊'}拖曳到這裡上傳`;
+
     // 上傳狀態
     const status = document.createElement('div');
     status.className = 'file-status';
@@ -151,31 +156,64 @@ const NodeRenderer = (() => {
     preview.className = 'file-preview';
     preview.id = `file-preview-${index}`;
 
-    input.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    input.addEventListener('change', (e) => handleFileSelected(e.target.files[0]));
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      container.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      container.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.remove('drag-over');
+      });
+    });
+
+    container.addEventListener('drop', (e) => {
+      const file = e.dataTransfer?.files?.[0];
+      handleFileSelected(file);
+    });
+
+    async function handleFileSelected(file) {
       if (!file) return;
 
-      // 顯示預覽
+      if (!isAcceptedFile(file, fileType)) {
+        status.innerHTML = `<span class="upload-error">❌ 請選擇${fileType === 'image' ? '圖片' : fileType === 'video' ? '影片' : '音訊'}檔案</span>`;
+        return;
+      }
+
+      delete input.dataset.uploadedFileName;
+      current.textContent = `待上傳: ${file.name}`;
       showPreview(preview, file, fileType);
 
-      // 上傳
       status.innerHTML = '<span class="uploading">⏳ 上傳中...</span>';
       try {
         const result = await API.uploadFile(file, fileType);
         status.innerHTML = `<span class="upload-success">✅ 上傳成功</span>`;
         current.textContent = `目前: ${result.fileName}`;
-        // 更新 data attribute 以便後續讀取
         input.dataset.uploadedFileName = result.fileName;
       } catch (err) {
         status.innerHTML = `<span class="upload-error">❌ ${err.message}</span>`;
       }
-    });
+    }
 
     container.appendChild(input);
     container.appendChild(label);
+    container.appendChild(hint);
     container.appendChild(status);
     container.appendChild(preview);
     return container;
+  }
+
+  function isAcceptedFile(file, type) {
+    if (!file || !type) return false;
+    if (!file.type) return true;
+    return file.type.startsWith(`${type}/`);
   }
 
   function showPreview(container, file, type) {
