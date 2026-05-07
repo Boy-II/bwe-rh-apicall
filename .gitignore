@@ -1,4 +1,5 @@
 config.json
+config.json.migrated.bak
 node_modules/
 .DS_Store
 __pycache__/
@@ -7,3 +8,6 @@ __pycache__/
 venv/
 CLAUDE.md
 docs/
+prompt-templates/
+runninghub/
+RHAPI_操作守則及計畫.md

@@ -2,12 +2,12 @@
  * app.js — 應用入口：路由、事件、管理員權限控制
  */
 
-import Config from './config.js?v=9';
-import CardManager from './cardManager.js?v=9';
-import NodeRenderer from './nodeRenderer.js?v=9';
-import TaskManager from './taskManager.js?v=9';
-import API from './api.js?v=9';
-import ChatModule from './chatModule.js?v=9';
+import Config from './config.js';
+import CardManager from './cardManager.js';
+import NodeRenderer from './nodeRenderer.js';
+import TaskManager from './taskManager.js';
+import API from './api.js';
+import ChatModule from './chatModule.js';
 
 // ===== 全域狀態 =====
 const state = {
@@ -511,16 +511,25 @@ async function refreshUserList() {
       el.className = 'user-list-item';
       const statusLabel = { pending: '⏳ 待審核', approved: '✅ 已批准', rejected: '❌ 已拒絕' }[user.status] || user.status;
       el.innerHTML = `
-        <div class="user-info">
-          <span class="user-name">${escapeHtml(user.username)}</span>
-          <span class="user-status user-status-${user.status}">${statusLabel}</span>
-          <span class="user-date">${new Date(user.createdAt).toLocaleDateString('zh-TW')}</span>
+        <div class="user-row">
+          <div class="user-info">
+            <span class="user-name">${escapeHtml(user.username)}</span>
+            <span class="user-status user-status-${user.status}">${statusLabel}</span>
+            <span class="user-date">${new Date(user.createdAt).toLocaleDateString('zh-TW')}</span>
+          </div>
+          <div class="user-actions">
+            ${user.status !== 'approved' ? `<button class="btn btn-success btn-sm user-approve-btn" data-id="${user.id}">批准</button>` : ''}
+            ${user.status !== 'rejected' ? `<button class="btn btn-sm user-reject-btn" data-id="${user.id}">拒絕</button>` : ''}
+            <button class="btn btn-danger btn-sm user-delete-btn" data-id="${user.id}">刪除</button>
+          </div>
         </div>
-        <div class="user-actions">
-          ${user.status !== 'approved' ? `<button class="btn btn-success btn-sm user-approve-btn" data-id="${user.id}">批准</button>` : ''}
-          ${user.status !== 'rejected' ? `<button class="btn btn-sm user-reject-btn" data-id="${user.id}">拒絕</button>` : ''}
-          <button class="btn btn-danger btn-sm user-delete-btn" data-id="${user.id}">刪除</button>
-        </div>
+        <input type="text"
+               class="user-note-input"
+               data-id="${user.id}"
+               data-original="${escapeHtml(user.note || '')}"
+               placeholder="備註（管理員可見，500 字內）"
+               maxlength="500"
+               value="${escapeHtml(user.note || '')}" />
       `;
       dom.userMgmtList.appendChild(el);
     });
@@ -552,6 +561,27 @@ async function refreshUserList() {
           showToast('已刪除用戶', 'info');
           await refreshUserList();
         } catch (e) { showToast(`失敗: ${e.message}`, 'error'); }
+      });
+    });
+
+    dom.userMgmtList.querySelectorAll('.user-note-input').forEach(input => {
+      const save = async () => {
+        const newValue = input.value;
+        if (newValue === input.dataset.original) return;
+        try {
+          await API.adminUpdateUserNote(state.adminToken, input.dataset.id, newValue);
+          input.dataset.original = newValue;
+          input.classList.add('saved');
+          setTimeout(() => input.classList.remove('saved'), 800);
+        } catch (e) {
+          showToast(`備註儲存失敗: ${e.message}`, 'error');
+          input.value = input.dataset.original;
+        }
+      };
+      input.addEventListener('blur', save);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = input.dataset.original; input.blur(); }
       });
     });
   } catch (e) {

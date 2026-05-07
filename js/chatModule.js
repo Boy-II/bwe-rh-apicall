@@ -2,6 +2,8 @@
  * chatModule.js — AI 助手側邊欄：UI 控制、訊息收發、prompt 套用
  */
 
+import API from './api.js';
+
 const ChatModule = (() => {
   // ===== 內部狀態 =====
   let _context = { cards: [], currentCard: null, nodeInfoList: null };
@@ -141,23 +143,12 @@ const ChatModule = (() => {
     const loadingEl = _appendLoading();
 
     try {
-      const resp = await fetch('/api/proxy/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text || '請描述這張圖片的內容。',
-          history: _history.slice(-20),
-          context: _context,
-          image: imageToSend || ''
-        })
+      const aiText = await API.chat({
+        message: text || '請描述這張圖片的內容。',
+        history: _history.slice(-20),
+        context: _context,
+        image: imageToSend || ''
       });
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
-        throw new Error(err.detail || `HTTP ${resp.status}`);
-      }
-
-      const { text: aiText } = await resp.json();
       _history.push({ role: 'model', text: aiText });
       loadingEl.remove();
       _appendMessage('model', _parseResponse(aiText));

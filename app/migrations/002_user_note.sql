@@ -1,0 +1,2 @@
+-- 為用戶新增備註欄位（管理員後台用）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT '';

@@ -1,17 +1,34 @@
-version: "3.8"
-
 services:
-  rhapi:
-    build: .
-    container_name: runninghub-client
-    ports:
-      - "8000:8000"
+  postgres:
+    image: postgres:16-alpine
+    container_name: rhapi-postgres
     environment:
-      - RUNNINGHUB_API_KEY=4a20a178c59d401499058263fccde86d
-      - RUNNINGHUB_BASE_URL=https://www.runninghub.ai
-      - ADMIN_PASSWORD=admin
-      - GEMINI_API_KEY=your_key_here
+      POSTGRES_USER: rhapi
+      POSTGRES_PASSWORD: rhapi_local_dev
+      POSTGRES_DB: rhapi
+    ports:
+      - "5433:5432"
     volumes:
-      - ./config.json:/app/config.json
-      - ./config.json:/card/config.json
-    restart: unless-stopped
+      - rhapi_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rhapi -d rhapi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rhapi-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - rhapi_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  rhapi_pg_data:
+  rhapi_redis_data:

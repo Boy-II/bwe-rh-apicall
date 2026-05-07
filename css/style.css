@@ -699,8 +699,24 @@ textarea.node-input {
   transition: var(--transition);
 }
 
+.file-upload-area.drag-over {
+  background: rgba(108, 92, 231, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.file-upload-area:focus-within {
+  border-color: var(--border-focus);
+}
+
 .file-input {
   display: none;
+}
+
+.file-drop-hint {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .file-upload-btn {
@@ -1451,13 +1467,36 @@ body.chat-open main {
 }
 .user-list-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 0.75rem 1rem;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+}
+.user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.user-note-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  transition: var(--transition);
+}
+.user-note-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.user-note-input.saved {
+  border-color: var(--success);
+  box-shadow: 0 0 0 2px rgba(0, 184, 148, 0.2);
 }
 .user-info {
   display: flex;

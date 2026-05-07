@@ -51,7 +51,8 @@ const API = (() => {
   async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch('/api/proxy/uploadFile', { method: 'POST', body: formData });
+    const headers = _userToken ? { 'X-User-Token': _userToken } : {};
+    const res = await fetch('/api/proxy/uploadFile', { method: 'POST', headers, body: formData });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || `上傳失敗: HTTP ${res.status}`);
@@ -59,6 +60,11 @@ const API = (() => {
     const data = await res.json();
     if (data.code !== 0) throw new Error(`上傳失敗: ${data.msg}`);
     return data.data;
+  }
+
+  async function chat(payload) {
+    const data = await postJSON('/api/proxy/chat', payload);
+    return data.text;
   }
 
   async function submitTask(webappId, nodeInfoList) {
@@ -292,14 +298,28 @@ const API = (() => {
     return await res.json();
   }
 
+  async function adminUpdateUserNote(token, userId, note) {
+    const res = await fetch(`/api/admin/users/${userId}/note`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ note })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
   return {
     getNodeInfo, uploadFile, submitTask, queryTaskOutputs, pollTask, getConfigStatus,
+    chat,
     adminLogin, adminLogout, adminVerify,
     getCards, adminAddCard, adminUpdateCard, adminDeleteCard,
     adminGetAIConfig, adminSaveAIConfig, adminFetchAIModels,
     setUserToken,
     userRegister, userLogin, userLogout, userVerify,
-    adminGetUsers, adminApproveUser, adminRejectUser, adminDeleteUser
+    adminGetUsers, adminApproveUser, adminRejectUser, adminDeleteUser, adminUpdateUserNote
   };
 })();
 
