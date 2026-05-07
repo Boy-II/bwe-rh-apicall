@@ -697,6 +697,18 @@ textarea.node-input {
   border-radius: var(--radius-sm);
   padding: 1rem;
   transition: var(--transition);
+  background: rgba(255, 255, 255, 0.02);
+  outline: none;
+}
+
+.file-upload-area.drag-over {
+  background: rgba(108, 92, 231, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.file-upload-area:focus-within {
+  border-color: var(--border-focus);
 }
 
 .file-upload-area.drag-over {
@@ -738,6 +750,12 @@ textarea.node-input {
   border-color: var(--accent);
 }
 
+.file-drop-hint {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .file-current {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -756,6 +774,9 @@ textarea.node-input {
 
 .file-preview {
   margin-top: 0.6rem;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
 }
 
 .preview-img {

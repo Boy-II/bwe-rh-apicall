@@ -204,9 +204,9 @@ const NodeRenderer = (() => {
 
     container.appendChild(input);
     container.appendChild(label);
+    container.appendChild(hint);
     container.appendChild(status);
     container.appendChild(preview);
-    container.appendChild(hint);
     return container;
   }
 
