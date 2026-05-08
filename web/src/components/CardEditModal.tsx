@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { PALETTE } from '@/lib/card-utils';
+import { PALETTE, isVideoCover } from '@/lib/card-utils';
 import { compressImageToJpegFile } from '@/lib/image-compress';
 import type { Card, EditableField, NodeInfo } from '@/lib/types';
 import api from '@/lib/api';
@@ -131,18 +131,21 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
 
   const onPickFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('請選擇圖片檔案');
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    if (!isImage && !isVideo) {
+      toast.error('請選擇圖片或影片檔案');
       return;
     }
     setUploading(true);
     try {
-      // 卡片 cover 顯示在 grid 是 4:3 約 300×225，壓到最長邊 800、quality 0.85 綽綽有餘
-      // 壓縮失敗或不划算時自動回原檔
-      const compressed = await compressImageToJpegFile(file, { maxDim: 800, quality: 0.85 });
-      const res = await api.cards.uploadCover(compressed);
+      // 圖片：client-side 壓 JPG（maxDim 800 / quality 0.85）；影片：原檔上傳（≤ 10 MB）
+      const toUpload = isImage
+        ? await compressImageToJpegFile(file, { maxDim: 800, quality: 0.85 })
+        : file;
+      const res = await api.cards.uploadCover(toUpload);
       set('coverUrl', res.coverUrl);
-      toast.success('預覽圖已上傳');
+      toast.success(isVideo ? '影片封面已上傳' : '預覽圖已上傳');
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -458,7 +461,18 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                 style={form.coverUrl ? undefined : { backgroundColor: form.color || PALETTE[0] }}
               >
                 {form.coverUrl ? (
-                  <img src={form.coverUrl} alt="預覽" className="h-full w-full object-cover" />
+                  isVideoCover(form.coverUrl) ? (
+                    <video
+                      src={form.coverUrl}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <img src={form.coverUrl} alt="預覽" className="h-full w-full object-cover" />
+                  )
                 ) : (
                   <span className="text-xs text-white/80">尚無圖片</span>
                 )}
@@ -467,7 +481,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -503,7 +517,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                   </Button>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  PNG/JPG/WEBP/GIF，最大 5 MB
+                  圖片 PNG/JPG/WEBP/GIF（≤ 5 MB，自動壓 JPG）；影片 MP4/WEBM/MOV（≤ 10 MB，原檔上傳）
                 </p>
               </div>
             </div>

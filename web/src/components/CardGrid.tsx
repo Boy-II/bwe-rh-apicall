@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { CardWithUsage } from '@/lib/card-utils';
+import { isVideoCover, type CardWithUsage } from '@/lib/card-utils';
 
 interface Props {
   cards: CardWithUsage[];
@@ -150,12 +150,24 @@ function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardI
           style={card.coverUrl ? undefined : { backgroundColor: themeColor }}
         >
           {card.coverUrl ? (
-            <img
-              src={card.coverUrl}
-              alt={card.title}
-              loading="lazy"
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
+            isVideoCover(card.coverUrl) ? (
+              <video
+                src={card.coverUrl}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <img
+                src={card.coverUrl}
+                alt={card.title}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+            )
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <span className="text-3xl font-semibold text-white/90">

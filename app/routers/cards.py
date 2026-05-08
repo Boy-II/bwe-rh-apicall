@@ -16,8 +16,18 @@ router = APIRouter()
 COVER_BASE_DIR = Path("/card/covers") if Path("/card").exists() else Path("./covers")
 COVER_BASE_DIR.mkdir(parents=True, exist_ok=True)
 COVER_URL_PREFIX = "/covers"  # 由 main.py mount StaticFiles
-ALLOWED_IMG_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
-MAX_COVER_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# 圖片：5 MB 上限（前端會 client-side 壓縮，正常落點 < 200 KB）
+# 影片：10 MB 上限（短 mp4 動圖；前端不壓縮）
+COVER_TYPE_EXT: dict[str, tuple[str, int]] = {
+    "image/png":       (".png",  5 * 1024 * 1024),
+    "image/jpeg":      (".jpg",  5 * 1024 * 1024),
+    "image/webp":      (".webp", 5 * 1024 * 1024),
+    "image/gif":       (".gif",  5 * 1024 * 1024),
+    "video/mp4":       (".mp4",  10 * 1024 * 1024),
+    "video/webm":      (".webm", 10 * 1024 * 1024),
+    "video/quicktime": (".mov",  10 * 1024 * 1024),
+}
 
 
 def _row_to_dict(row: dict) -> dict:
@@ -212,16 +222,20 @@ async def admin_upload_cover(
     file: UploadFile = File(...),
     _: str = Depends(auth.require_admin),
 ):
-    """上傳卡片預覽圖。回傳可直接放到 cover_url 的相對路徑。"""
+    """上傳卡片預覽圖（支援圖片 + 短影片）。回傳可直接放到 cover_url 的相對路徑。"""
     content_type = (file.content_type or "").lower()
-    if content_type not in ALLOWED_IMG_TYPES:
-        raise HTTPException(status_code=400, detail="僅支援 PNG / JPEG / WEBP / GIF 圖片")
+    if content_type not in COVER_TYPE_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail="僅支援 PNG / JPEG / WEBP / GIF / MP4 / WEBM / MOV",
+        )
 
+    ext, max_bytes = COVER_TYPE_EXT[content_type]
     content = await file.read()
-    if len(content) > MAX_COVER_BYTES:
-        raise HTTPException(status_code=400, detail="圖片過大，請小於 5 MB")
+    if len(content) > max_bytes:
+        size_mb = max_bytes // (1024 * 1024)
+        raise HTTPException(status_code=400, detail=f"檔案過大，請小於 {size_mb} MB")
 
-    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}[content_type]
     filename = f"{secrets.token_hex(12)}{ext}"
     target = COVER_BASE_DIR / filename
     target.write_bytes(content)

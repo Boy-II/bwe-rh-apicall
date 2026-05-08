@@ -41,3 +41,7 @@ export function sortCards(cards: CardWithUsage[]): CardWithUsage[] {
     return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   });
 }
+
+export function isVideoCover(url: string): boolean {
+  return /\.(mp4|webm|mov)(\?|$)/i.test(url || '');
+}
