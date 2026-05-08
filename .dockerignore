@@ -1,0 +1,33 @@
+.git
+.gitignore
+.env
+.env.example
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+# Frontend build artifacts (multi-stage builds them fresh)
+web/node_modules
+web/dist
+web/.vite
+
+# Legacy SPA (kept in repo, not needed in image)
+js/
+css/
+index.html
+
+# Local config
+config.json
+config.json.migrated.bak
+docker-compose.yml
+
+# Docs / planning
+docs/
+prompt-templates/
+RHAPI_*.md
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store

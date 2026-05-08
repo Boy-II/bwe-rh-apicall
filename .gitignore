@@ -11,3 +11,6 @@ docs/
 prompt-templates/
 runninghub/
 RHAPI_操作守則及計畫.md
+
+# 上傳的卡片預覽圖（本地 fallback；生產用 /card/covers/ 持久卷）
+covers/

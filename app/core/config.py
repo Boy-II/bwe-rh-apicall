@@ -69,6 +69,19 @@ def get_ai_model() -> str:
     return _ENV_AI_MODEL or get_db_setting("ai_model")
 
 
+def get_ai_system_prompt() -> str:
+    """全域 system prompt（admin 可在 UI 設定）。空字串 = 用預設文字。"""
+    return get_db_setting("ai_system_prompt")
+
+
+def get_cost_currency() -> str:
+    """consumeMoney 顯示用的幣別代碼（USD/CNY/TWD）。預設 USD。
+
+    注意：早期有 cost_per_second 設定（已移除），DB 欄位若有殘留值不再使用。
+    """
+    return get_db_setting("cost_currency") or "USD"
+
+
 def get_jwt_secret() -> str:
     return _ENV_JWT_SECRET or get_db_setting("jwt_secret")
 

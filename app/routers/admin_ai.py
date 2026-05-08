@@ -15,6 +15,8 @@ async def get_ai_config(_: str = Depends(auth.require_admin)):
         "aiBaseUrl": config.get_ai_base_url(),
         "aiModel": config.get_ai_model(),
         "hasApiKey": bool(config.get_ai_api_key()),
+        "aiSystemPrompt": config.get_ai_system_prompt(),
+        "costCurrency": config.get_cost_currency(),
     }
 
 
@@ -22,7 +24,9 @@ async def get_ai_config(_: str = Depends(auth.require_admin)):
 async def save_ai_config(req: AIConfigRequest, _: str = Depends(auth.require_admin)):
     """儲存到 settings 表 + 更新 in-memory 快取。
 
-    注意：env 設了的欄位仍會優先生效，這裡只動 DB 層。
+    - aiBaseUrl/aiModel 一律覆寫
+    - aiApiKey 留空表示「保留現有」
+    - aiSystemPrompt: None=不更動；空字串=清除
     """
     base = req.aiBaseUrl.strip()
     model = req.aiModel.strip()
@@ -32,11 +36,19 @@ async def save_ai_config(req: AIConfigRequest, _: str = Depends(auth.require_adm
     await _upsert("ai_model", model)
     if new_key:
         await _upsert("ai_api_key", new_key)
+    if req.aiSystemPrompt is not None:
+        await _upsert("ai_system_prompt", req.aiSystemPrompt.strip())
+    if req.costCurrency is not None and req.costCurrency.strip():
+        await _upsert("cost_currency", req.costCurrency.strip().upper())
 
     config.set_db_setting("ai_base_url", base)
     config.set_db_setting("ai_model", model)
     if new_key:
         config.set_db_setting("ai_api_key", new_key)
+    if req.aiSystemPrompt is not None:
+        config.set_db_setting("ai_system_prompt", req.aiSystemPrompt.strip())
+    if req.costCurrency is not None and req.costCurrency.strip():
+        config.set_db_setting("cost_currency", req.costCurrency.strip().upper())
     return {"success": True}
 
 

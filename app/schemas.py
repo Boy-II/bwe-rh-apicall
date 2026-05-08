@@ -25,19 +25,40 @@ class UserLoginRequest(BaseModel):
 # ===== Cards =====
 
 
+class EditableField(BaseModel):
+    nodeId: str
+    fieldName: str
+
+
 class CardCreate(BaseModel):
-    webappId: str
+    cardType: str = "webapp"  # webapp / workflow
+    webappId: str = ""
+    workflowId: str = ""
     title: str
-    description: str = ""
+    description: str = ""  # 使用者可見的卡片描述
+    llmNote: str = ""  # 給 LLM 看的功能說明（不對使用者顯示）
     icon: str = "🎨"
     color: str = "#6C5CE7"
+    coverUrl: str = ""
+    editableFields: list[EditableField] = []
+    instanceType: str = "default"  # default(24G) / plus(48G 4090)
+    maxDurationSeconds: int = 0  # 0=用全域預設；>0=本卡片輪詢上限
 
 
 class CardUpdate(BaseModel):
     title: str
     description: str = ""
-    icon: str
-    color: str
+    llmNote: str = ""
+    icon: str = "🎨"
+    color: str = "#6C5CE7"
+    coverUrl: str = ""
+    editableFields: Optional[list[EditableField]] = None  # None = 不更動
+    instanceType: Optional[str] = None  # None = 不更動
+    maxDurationSeconds: Optional[int] = None  # None = 不更動
+
+
+class CardReorderRequest(BaseModel):
+    ids: list[str]
 
 
 # ===== AI =====
@@ -47,13 +68,16 @@ class AIChatRequest(BaseModel):
     message: str
     history: list = []
     context: dict = {}
-    image: str = ""  # base64 data URL
+    image: str = ""  # base64 data URL（單張，舊版相容）
+    images: list[str] = []  # base64 data URLs（多張，最多 2）
 
 
 class AIConfigRequest(BaseModel):
     aiBaseUrl: str = ""
     aiApiKey: str = ""
     aiModel: str = ""
+    aiSystemPrompt: Optional[str] = None  # None = 不更動現值；空字串 = 清除
+    costCurrency: Optional[str] = None  # consumeMoney 顯示幣別；None = 不更動
 
 
 class AIModelsRequest(BaseModel):
@@ -71,7 +95,32 @@ class NodeInfoRequest(BaseModel):
 class SubmitTaskRequest(BaseModel):
     webappId: str
     nodeInfoList: list
+    cardId: Optional[str] = None
+    cardTitle: Optional[str] = ""
+
+
+class WorkflowFormatRequest(BaseModel):
+    workflowId: str
+
+
+class SubmitWorkflowRequest(BaseModel):
+    workflowId: str
+    nodeInfoList: list
+    cardId: Optional[str] = None
+    cardTitle: Optional[str] = ""
+    retainSeconds: int = 60
+    instanceType: str = "default"  # default / plus(48G 4090)
 
 
 class TaskQueryRequest(BaseModel):
     taskId: str
+
+
+# ===== Admin RunningHub =====
+
+
+class AppListRequest(BaseModel):
+    sort: str = "RECOMMEND"  # RECOMMEND / HOTTEST / NEWEST
+    size: int = 10
+    page: int = 1
+    days: int = 7  # 僅 HOTTEST 使用

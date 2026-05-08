@@ -46,7 +46,7 @@ async def get_node_info(webapp_id: str) -> dict:
         resp = await client().get(url, params={"apiKey": _api_key(), "webappId": webapp_id})
         return resp.json()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+        raise HTTPException(status_code=504, detail="上游 API 請求逾時")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
 
@@ -58,7 +58,7 @@ async def post_with_apikey(endpoint: str, body: dict) -> dict:
         resp = await client().post(url, json={**body, "apiKey": _api_key()})
         return resp.json()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+        raise HTTPException(status_code=504, detail="上游 API 請求逾時")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
 
@@ -74,7 +74,44 @@ async def post_with_bearer(endpoint: str, body: dict) -> dict:
         resp = await client().post(url, json=body, headers=headers)
         return resp.json()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="RunningHub API 請求逾時")
+        raise HTTPException(status_code=504, detail="上游 API 請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
+
+
+async def post_workflow(body: dict, instance_type: str = "default") -> dict:
+    """workflow 提交：POST /task/openapi/create，body 帶 apiKey 與 instanceType。
+
+    instance_type:
+      - "default" → 24G（不傳 instanceType）
+      - "plus"    → 48G（body 加 instanceType: "plus"）
+    """
+    url = f"{_base_url()}/task/openapi/create"
+    payload = {**body, "apiKey": _api_key()}
+    if instance_type == "plus":
+        payload["instanceType"] = "plus"
+    try:
+        resp = await client().post(url, json=payload)
+        return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="上游 API 請求逾時")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
+
+
+async def post_with_bearer_and_apikey(endpoint: str, body: dict | None = None) -> dict:
+    """POST /uc/openapi/*（body 帶 apikey + Authorization: Bearer）"""
+    url = f"{_base_url()}{endpoint}"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_api_key()}",
+    }
+    payload = {**(body or {}), "apikey": _api_key()}
+    try:
+        resp = await client().post(url, json=payload, headers=headers)
+        return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="上游 API 請求逾時")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
 
