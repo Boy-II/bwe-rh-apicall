@@ -47,6 +47,7 @@ def _row_to_dict(row: dict) -> dict:
         "editableFields": row.get("editable_fields") or [],
         "instanceType": row.get("instance_type") or "default",
         "maxDurationSeconds": row.get("max_duration_seconds") or 0,
+        "enableMaskEditor": bool(row.get("enable_mask_editor")),
         "sortOrder": row.get("sort_order"),
         "createdAt": row["created_at"].isoformat() if row.get("created_at") else "",
     }
@@ -54,7 +55,8 @@ def _row_to_dict(row: dict) -> dict:
 
 _CARD_COLUMNS = (
     "id, card_type, webapp_id, workflow_id, title, description, llm_note, icon, color, "
-    "cover_url, tags, editable_fields, instance_type, max_duration_seconds, sort_order, created_at"
+    "cover_url, tags, editable_fields, instance_type, max_duration_seconds, "
+    "enable_mask_editor, sort_order, created_at"
 )
 
 
@@ -99,7 +101,7 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
     now = datetime.now(timezone.utc)
     next_sort = await db.fetch_val("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM cards")
 
-    editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName} for e in (req.editableFields or [])]
+    editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName, "fieldType": e.fieldType, "displayName": e.displayName} for e in (req.editableFields or [])]
 
     instance = req.instanceType if req.instanceType in {"default", "plus"} else "default"
     max_dur = max(0, int(req.maxDurationSeconds or 0))
@@ -110,9 +112,9 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         INSERT INTO cards (
             id, card_type, webapp_id, workflow_id, title, description, llm_note, icon,
             color, cover_url, tags, editable_fields, instance_type, max_duration_seconds,
-            sort_order, created_at, updated_at
+            enable_mask_editor, sort_order, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
         RETURNING {_CARD_COLUMNS}
         """,
         card_id,
@@ -129,6 +131,7 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         editable,
         instance,
         max_dur,
+        bool(req.enableMaskEditor),
         next_sort,
         now,
     )
@@ -158,7 +161,7 @@ async def admin_update_card(
     ]
     next_idx = 9
     if req.editableFields is not None:
-        editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName} for e in req.editableFields]
+        editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName, "fieldType": e.fieldType, "displayName": e.displayName} for e in req.editableFields]
         sets.append(f"editable_fields = ${next_idx}")
         args.append(editable)
         next_idx += 1
@@ -174,6 +177,10 @@ async def admin_update_card(
     if req.tags is not None:
         sets.append(f"tags = ${next_idx}")
         args.append(_normalize_tags(req.tags))
+        next_idx += 1
+    if req.enableMaskEditor is not None:
+        sets.append(f"enable_mask_editor = ${next_idx}")
+        args.append(bool(req.enableMaskEditor))
         next_idx += 1
 
     row = await db.fetch_one(

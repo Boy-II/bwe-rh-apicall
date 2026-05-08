@@ -28,6 +28,8 @@ class UserLoginRequest(BaseModel):
 class EditableField(BaseModel):
     nodeId: str
     fieldName: str
+    fieldType: Optional[str] = None  # admin 指定的渲染類型；None=用 parser 推斷
+    displayName: Optional[str] = None  # admin 自訂顯示名稱（user 端標籤）
 
 
 class CardCreate(BaseModel):
@@ -44,6 +46,7 @@ class CardCreate(BaseModel):
     editableFields: list[EditableField] = []
     instanceType: str = "default"  # default(24G) / plus(48G 4090)
     maxDurationSeconds: int = 0  # 0=用全域預設；>0=本卡片輪詢上限
+    enableMaskEditor: bool = False  # 啟用遮罩編輯器（約定：欄位 1=source、欄位 2=mask）
 
 
 class CardUpdate(BaseModel):
@@ -57,6 +60,7 @@ class CardUpdate(BaseModel):
     editableFields: Optional[list[EditableField]] = None  # None = 不更動
     instanceType: Optional[str] = None  # None = 不更動
     maxDurationSeconds: Optional[int] = None  # None = 不更動
+    enableMaskEditor: Optional[bool] = None  # None = 不更動
 
 
 class CardReorderRequest(BaseModel):

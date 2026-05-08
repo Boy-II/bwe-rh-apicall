@@ -113,7 +113,7 @@ export const cards = {
       Pick<
         Card,
         'webappId' | 'workflowId' | 'icon' | 'color' | 'editableFields' |
-        'instanceType' | 'cardType' | 'maxDurationSeconds' | 'llmNote' | 'tags'
+        'instanceType' | 'cardType' | 'maxDurationSeconds' | 'llmNote' | 'tags' | 'enableMaskEditor'
       >
     > &
       Pick<Card, 'title' | 'description' | 'coverUrl'>,
@@ -123,7 +123,11 @@ export const cards = {
     id: string,
     card: Pick<Card, 'title' | 'description' | 'coverUrl'> &
       Partial<
-        Pick<Card, 'icon' | 'color' | 'editableFields' | 'instanceType' | 'maxDurationSeconds' | 'llmNote' | 'tags'>
+        Pick<
+          Card,
+          'icon' | 'color' | 'editableFields' | 'instanceType' | 'maxDurationSeconds' |
+          'llmNote' | 'tags' | 'enableMaskEditor'
+        >
       >,
   ) =>
     request<Card>(`/api/admin/cards/${id}`, {

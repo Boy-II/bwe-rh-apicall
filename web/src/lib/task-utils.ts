@@ -97,6 +97,10 @@ export function findPromptNodeError(result: { promptTips?: string }): string | n
 export interface DraftNode extends NodeInfo {
   /** override file name returned by /uploadFile */
   uploadedFileName?: string | null;
+  /** 本地預覽（dataURL/blob URL），mask 編輯器載入底圖用 */
+  localImageUrl?: string;
+  /** mask 編輯後的 dataURL（重新編輯時帶回繼續畫） */
+  localMaskDataUrl?: string;
 }
 
 export function applyEdits(original: NodeInfo[], drafts: DraftNode[]): NodeInfo[] {

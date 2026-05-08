@@ -32,6 +32,10 @@ export type InstanceType = 'default' | 'plus'; // default=24G, plus=4090 48G
 export interface EditableField {
   nodeId: string;
   fieldName: string;
+  /** admin 指定的渲染類型；缺省時使用 parser 推斷 */
+  fieldType?: NodeFieldType;
+  /** admin 自訂顯示名稱（給使用者看的標籤）；空字串 = 用 description / fieldName */
+  displayName?: string;
 }
 
 export interface Card {
@@ -49,6 +53,7 @@ export interface Card {
   editableFields: EditableField[];
   instanceType: InstanceType;
   maxDurationSeconds: number; // 0 = 用全域預設（10 分鐘）
+  enableMaskEditor: boolean; // 啟用後第一個 IMAGE 為來源、第二個為 mask（user 端隱藏 mask 欄位）
   sortOrder?: number;
   createdAt?: string;
 }

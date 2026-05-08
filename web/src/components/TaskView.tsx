@@ -53,8 +53,32 @@ export function TaskView({ card, onBack, prefill }: Props) {
   // workflow 模式下只顯示白名單裡的節點
   const visibleNodes = useMemo(() => {
     if (!isWorkflow) return allNodes;
+    // workflow 模式：依 editableFields 過濾，並套用 admin 指定的 fieldType / displayName
+    const overrides = new Map(
+      (card.editableFields || []).map(
+        (e) =>
+          [
+            fieldKey(e),
+            {
+              fieldType: e.fieldType,
+              displayName: e.displayName,
+            },
+          ] as const,
+      ),
+    );
     const allowed = new Set((card.editableFields || []).map(fieldKey));
-    return allNodes.filter((n) => allowed.has(fieldKey(n)));
+    return allNodes
+      .filter((n) => allowed.has(fieldKey(n)))
+      .map((n) => {
+        const o = overrides.get(fieldKey(n));
+        if (!o) return n;
+        return {
+          ...n,
+          fieldType: o.fieldType || n.fieldType,
+          // displayName 覆寫節點顯示文字（NodeRenderer 用 description 顯示）
+          description: o.displayName?.trim() ? o.displayName : n.description,
+        };
+      });
   }, [allNodes, isWorkflow, card.editableFields]);
 
   const reload = useCallback(async () => {

@@ -127,6 +127,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     }
   }, [open, card]);
 
+
   const set = <K extends keyof Card>(key: K, value: Card[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
@@ -177,8 +178,46 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     const cur = form.editableFields || [];
     const next: EditableField[] = editableSet.has(key)
       ? cur.filter((e) => fieldKey(e) !== key)
-      : [...cur, { nodeId: n.nodeId, fieldName: n.fieldName }];
+      : [
+          ...cur,
+          {
+            nodeId: n.nodeId,
+            fieldName: n.fieldName,
+            // 勾選時把 parser 推斷的類型存下來當預設；admin 可後續改
+            fieldType: (n.fieldType || 'STRING').toUpperCase(),
+          },
+        ];
     set('editableFields', next);
+  };
+
+  const setFieldType = (n: NodeInfo, fieldType: string) => {
+    const key = fieldKey(n);
+    const cur = form.editableFields || [];
+    const next = cur.map((e) =>
+      fieldKey(e) === key ? { ...e, fieldType } : e,
+    );
+    set('editableFields', next);
+  };
+
+  const setDisplayName = (n: NodeInfo, displayName: string) => {
+    const key = fieldKey(n);
+    const cur = form.editableFields || [];
+    const next = cur.map((e) =>
+      fieldKey(e) === key ? { ...e, displayName } : e,
+    );
+    set('editableFields', next);
+  };
+
+  const getFieldType = (n: NodeInfo): string => {
+    const key = fieldKey(n);
+    const hit = (form.editableFields || []).find((e) => fieldKey(e) === key);
+    return (hit?.fieldType || n.fieldType || 'STRING').toUpperCase();
+  };
+
+  const getDisplayName = (n: NodeInfo): string => {
+    const key = fieldKey(n);
+    const hit = (form.editableFields || []).find((e) => fieldKey(e) === key);
+    return hit?.displayName || '';
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -362,35 +401,73 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                     點擊「載入節點」抓取此 workflow 的所有可修改欄位，再勾選哪些開放給使用者
                   </p>
                 ) : (
-                  <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+                  <div className="max-h-96 overflow-y-auto rounded-md border border-border">
                     {nodes.map((n) => {
                       const key = fieldKey(n);
                       const checked = editableSet.has(key);
-                      const label = n.description || n.descriptionEn || n.fieldName;
+                      const defaultLabel = n.description || n.descriptionEn || n.fieldName;
                       return (
-                        <label
+                        <div
                           key={key}
-                          className="flex cursor-pointer items-start gap-2 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
+                          className="border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleField(n)}
-                            className="mt-0.5 size-4 cursor-pointer"
-                          />
-                          <div className="flex-1 text-sm">
-                            <div className="font-medium">{label}</div>
-                            <div className="font-mono text-xs text-muted-foreground">
-                              #{n.nodeId} · {n.fieldName} · {n.fieldType || 'STRING'}
-                            </div>
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleField(n)}
+                              className="mt-1 size-4 cursor-pointer"
+                              id={`ed-${key}`}
+                            />
+                            <label
+                              htmlFor={`ed-${key}`}
+                              className="flex-1 cursor-pointer text-sm"
+                            >
+                              <div className="font-medium">{defaultLabel}</div>
+                              <div className="font-mono text-xs text-muted-foreground">
+                                #{n.nodeId} · {n.fieldName}
+                              </div>
+                            </label>
+                            {checked ? (
+                              <select
+                                value={getFieldType(n)}
+                                onChange={(e) => setFieldType(n, e.target.value)}
+                                className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
+                                title="渲染類型（admin 指定）"
+                              >
+                                <option value="STRING">STRING</option>
+                                <option value="INT">INT</option>
+                                <option value="IMAGE">IMAGE</option>
+                                <option value="MASK">MASK 🎨</option>
+                                <option value="VIDEO">VIDEO</option>
+                                <option value="AUDIO">AUDIO</option>
+                                <option value="LIST">LIST</option>
+                              </select>
+                            ) : (
+                              <span className="self-center text-[10px] text-muted-foreground">
+                                {(n.fieldType || 'STRING').toUpperCase()}
+                              </span>
+                            )}
                           </div>
-                        </label>
+                          {checked && (
+                            <input
+                              type="text"
+                              value={getDisplayName(n)}
+                              onChange={(e) => setDisplayName(n, e.target.value)}
+                              placeholder={`使用者顯示名（留空＝用「${defaultLabel}」）`}
+                              className="mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs"
+                            />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  未勾選的欄位會用 workflow 預設值送出，使用者看不到（適合反向提示詞等固定設定）
+                  未勾選的欄位會用 workflow 預設值送出，使用者看不到（適合反向提示詞等固定設定）。
+                  <br />
+                  <b>類型</b>決定使用者表單呈現方式（圖片上傳 / 文字框 / 數字 / 下拉…）；
+                  自動推斷對 IMAGE/VIDEO/AUDIO 不可靠，請手動選擇。
                 </p>
               </div>
             </>
@@ -412,6 +489,21 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
               0 = 全域預設 600 秒；建議 60–3600 秒。RH 平台單任務上限 60 分鐘，超過此值將標記為 TIMEOUT。
             </p>
           </div>
+
+          {form.cardType === 'workflow' && (
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+              <div className="text-sm font-medium text-foreground">🎨 遮罩編輯器自動觸發</div>
+              <div className="mt-1">
+                把任一欄位的<b className="text-foreground">類型設為 MASK</b>，使用者端就會自動開啟遮罩編輯器：
+                <ul className="ml-4 mt-1 list-disc space-y-0.5">
+                  <li>該 MASK 欄位對 user 隱藏</li>
+                  <li>另一個 IMAGE 欄位視為來源圖（user 上傳）</li>
+                  <li>user 畫 mask → 自動上傳填入該 MASK 欄位</li>
+                </ul>
+                匯出：白色 = 重繪區、黑色 = 保留區（含羽化漸層）。
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">描述（使用者可見）</Label>

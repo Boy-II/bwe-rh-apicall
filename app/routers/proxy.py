@@ -6,6 +6,27 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+
+def _clean_node_info_list(items: list) -> list:
+    """送 RH 前去除 fieldType / description 等多餘欄位，只留 nodeId/fieldName/fieldValue。
+
+    RH 標準格式只認三個 key，多帶的欄位（如 fieldType: "MASK"）有些情境會被拒絕。
+    """
+    out: list = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        node_id = it.get("nodeId")
+        field_name = it.get("fieldName")
+        if node_id is None or field_name is None:
+            continue
+        out.append({
+            "nodeId": str(node_id),
+            "fieldName": str(field_name),
+            "fieldValue": it.get("fieldValue"),
+        })
+    return out
+
 from app.core import auth, config, db
 from app.core.rate_limit import rate_limit
 from app.schemas import (
@@ -55,13 +76,13 @@ def _parse_workflow_prompt(prompt_str: str) -> list[dict]:
             if isinstance(field_value, list):
                 continue
 
+            # FLOAT 與 BOOLEAN 都歸成 STRING（user 端不需要這兩類；admin 可在前端手動改類型）
             if isinstance(field_value, bool):
-                field_type = "BOOLEAN"
+                field_type = "STRING"
             elif isinstance(field_value, int):
                 field_type = "INT"
-            elif isinstance(field_value, float):
-                field_type = "FLOAT"
             else:
+                # float / str / 其他：一律 STRING
                 field_type = "STRING"
 
             out.append(
