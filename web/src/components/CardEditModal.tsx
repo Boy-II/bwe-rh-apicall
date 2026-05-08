@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PALETTE } from '@/lib/card-utils';
+import { compressImageToJpegFile } from '@/lib/image-compress';
 import type { Card, EditableField, NodeInfo } from '@/lib/types';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,72 @@ interface Props {
   onSaved: () => void;
 }
 
+function TagEditor({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const commit = () => {
+    const t = draft.trim().slice(0, 30);
+    if (!t) return;
+    if (value.includes(t)) {
+      setDraft('');
+      return;
+    }
+    if (value.length >= 10) {
+      toast.error('最多 10 個標籤');
+      return;
+    }
+    onChange([...value, t]);
+    setDraft('');
+  };
+
+  const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
+
+  return (
+    <div className="rounded-md border border-input bg-transparent p-2">
+      <div className="flex flex-wrap gap-1.5">
+        {value.map((t, i) => (
+          <span
+            key={`${t}-${i}`}
+            className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
+          >
+            {t}
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="rounded-full hover:bg-primary/20"
+              aria-label={`移除 ${t}`}
+            >
+              <X className="size-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              commit();
+            } else if (e.key === 'Backspace' && !draft && value.length > 0) {
+              e.preventDefault();
+              onChange(value.slice(0, -1));
+            }
+          }}
+          onBlur={commit}
+          placeholder={value.length === 0 ? '輸入後按 Enter…' : ''}
+          className="min-w-[8rem] flex-1 bg-transparent text-sm outline-none"
+        />
+      </div>
+    </div>
+  );
+}
+
 const empty: Partial<Card> = {
   cardType: 'webapp',
   webappId: '',
@@ -34,6 +101,7 @@ const empty: Partial<Card> = {
   llmNote: '',
   color: PALETTE[0],
   coverUrl: '',
+  tags: [],
   editableFields: [],
   instanceType: 'default',
   maxDurationSeconds: 0,
@@ -69,7 +137,10 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     }
     setUploading(true);
     try {
-      const res = await api.cards.uploadCover(file);
+      // 卡片 cover 顯示在 grid 是 4:3 約 300×225，壓到最長邊 800、quality 0.85 綽綽有餘
+      // 壓縮失敗或不划算時自動回原檔
+      const compressed = await compressImageToJpegFile(file, { maxDim: 800, quality: 0.85 });
+      const res = await api.cards.uploadCover(compressed);
       set('coverUrl', res.coverUrl);
       toast.success('預覽圖已上傳');
     } catch (e) {
@@ -130,6 +201,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           llmNote: form.llmNote || '',
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
+          tags: form.tags || [],
           editableFields: form.cardType === 'workflow' ? form.editableFields || [] : undefined,
           instanceType: form.cardType === 'workflow' ? form.instanceType : undefined,
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
@@ -145,6 +217,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           llmNote: form.llmNote || '',
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
+          tags: form.tags || [],
           editableFields: form.cardType === 'workflow' ? form.editableFields || [] : [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : 'default',
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
@@ -346,6 +419,17 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
               onChange={(e) => set('description', e.target.value)}
               placeholder="一句話描述應用功能，會顯示在卡片上"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>標籤（協助使用者搜尋）</Label>
+            <TagEditor
+              value={form.tags || []}
+              onChange={(next) => set('tags', next)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enter 或逗號加入；最多 10 個，每個 30 字內。例：「放大」「人像」「修復」
+            </p>
           </div>
 
           <div className="space-y-2">

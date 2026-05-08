@@ -45,6 +45,7 @@ export interface Card {
   icon: string;
   color: string;
   coverUrl: string;
+  tags: string[];
   editableFields: EditableField[];
   instanceType: InstanceType;
   maxDurationSeconds: number; // 0 = 用全域預設（10 分鐘）

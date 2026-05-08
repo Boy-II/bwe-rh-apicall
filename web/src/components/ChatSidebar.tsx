@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { compressImageToJpegDataUrl } from '@/lib/image-compress';
 import type { ChatHistoryEntry, NodeInfo } from '@/lib/types';
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3 MB
@@ -56,15 +57,6 @@ function parseResponse(text: string): MsgPart[] {
   return parts.length > 0 ? parts : [{ type: 'text', content: text }];
 }
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export function ChatSidebar({ context, onApplyPrompt }: Props) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<UiMessage[]>([WELCOME]);
@@ -114,7 +106,9 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
         continue;
       }
       try {
-        next.push(await readAsDataUrl(file));
+        // 自動壓成 JPEG 縮減 base64 體積（最長邊 2048、quality 0.85）
+        // task 節點上傳不走這個，確保模型輸入畫質
+        next.push(await compressImageToJpegDataUrl(file, { maxDim: 2048, quality: 0.85 }));
       } catch {
         // ignore unreadable
       }

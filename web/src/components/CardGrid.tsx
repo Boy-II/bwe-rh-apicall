@@ -28,6 +28,8 @@ interface Props {
   onDelete?: (card: CardWithUsage) => void;
   onCreate?: () => void;
   onReorder?: (newOrderIds: string[]) => void;
+  /** 過濾中（搜尋有值）時禁用拖曳排序，避免 reorder 把過濾掉的順序覆寫亂掉 */
+  disableSort?: boolean;
 }
 
 function relativeTime(iso: string | null) {
@@ -45,7 +47,8 @@ function relativeTime(iso: string | null) {
   return new Date(iso).toLocaleDateString();
 }
 
-export function CardGrid({ cards, isAdmin, onSelect, onEdit, onDelete, onCreate, onReorder }: Props) {
+export function CardGrid({ cards, isAdmin, onSelect, onEdit, onDelete, onCreate, onReorder, disableSort }: Props) {
+  const sortable = isAdmin && !disableSort;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -76,6 +79,7 @@ export function CardGrid({ cards, isAdmin, onSelect, onEdit, onDelete, onCreate,
           key={card.id}
           card={card}
           isAdmin={isAdmin}
+          sortable={sortable}
           onSelect={onSelect}
           onEdit={onEdit}
           onDelete={onDelete}
@@ -94,7 +98,7 @@ export function CardGrid({ cards, isAdmin, onSelect, onEdit, onDelete, onCreate,
     </div>
   );
 
-  if (!isAdmin) return grid;
+  if (!sortable) return grid;
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -108,14 +112,15 @@ export function CardGrid({ cards, isAdmin, onSelect, onEdit, onDelete, onCreate,
 interface CardItemProps {
   card: CardWithUsage;
   isAdmin: boolean;
+  sortable: boolean;
   onSelect: (card: CardWithUsage) => void;
   onEdit?: (card: CardWithUsage) => void;
   onDelete?: (card: CardWithUsage) => void;
 }
 
-function CardItem({ card, isAdmin, onSelect, onEdit, onDelete }: CardItemProps) {
-  const sortable = useSortable({ id: card.id, disabled: !isAdmin });
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
+function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardItemProps) {
+  const sortableHook = useSortable({ id: card.id, disabled: !sortable });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortableHook;
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -128,8 +133,8 @@ function CardItem({ card, isAdmin, onSelect, onEdit, onDelete }: CardItemProps) 
 
   return (
     <div
-      ref={isAdmin ? setNodeRef : undefined}
-      style={isAdmin ? style : undefined}
+      ref={sortable ? setNodeRef : undefined}
+      style={sortable ? style : undefined}
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md',
         isDragging && 'shadow-2xl',
@@ -164,6 +169,23 @@ function CardItem({ card, isAdmin, onSelect, onEdit, onDelete }: CardItemProps) 
           {card.description && (
             <p className="line-clamp-2 text-sm text-muted-foreground">{card.description}</p>
           )}
+          {card.tags && card.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {card.tags.slice(0, 4).map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  {t}
+                </span>
+              ))}
+              {card.tags.length > 4 && (
+                <span className="text-[10px] text-muted-foreground">
+                  +{card.tags.length - 4}
+                </span>
+              )}
+            </div>
+          )}
           <div className="mt-auto pt-2 text-xs text-muted-foreground">
             {relativeTime(card.lastUsedAt)}
           </div>
@@ -175,16 +197,18 @@ function CardItem({ card, isAdmin, onSelect, onEdit, onDelete }: CardItemProps) 
           className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            className="inline-flex size-7 cursor-grab items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-foreground active:cursor-grabbing"
-            aria-label="拖曳排序"
-            title="拖曳排序"
-          >
-            <GripVertical className="size-3.5" />
-          </button>
+          {sortable && (
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              className="inline-flex size-7 cursor-grab items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-foreground active:cursor-grabbing"
+              aria-label="拖曳排序"
+              title="拖曳排序"
+            >
+              <GripVertical className="size-3.5" />
+            </button>
+          )}
           <Button
             variant="secondary"
             size="icon"

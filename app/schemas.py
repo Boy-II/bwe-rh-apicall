@@ -40,6 +40,7 @@ class CardCreate(BaseModel):
     icon: str = "🎨"
     color: str = "#6C5CE7"
     coverUrl: str = ""
+    tags: list[str] = []
     editableFields: list[EditableField] = []
     instanceType: str = "default"  # default(24G) / plus(48G 4090)
     maxDurationSeconds: int = 0  # 0=用全域預設；>0=本卡片輪詢上限
@@ -52,6 +53,7 @@ class CardUpdate(BaseModel):
     icon: str = "🎨"
     color: str = "#6C5CE7"
     coverUrl: str = ""
+    tags: Optional[list[str]] = None  # None = 不更動
     editableFields: Optional[list[EditableField]] = None  # None = 不更動
     instanceType: Optional[str] = None  # None = 不更動
     maxDurationSeconds: Optional[int] = None  # None = 不更動

@@ -33,6 +33,7 @@ def _row_to_dict(row: dict) -> dict:
         "icon": row["icon"],
         "color": row["color"],
         "coverUrl": row.get("cover_url") or "",
+        "tags": row.get("tags") or [],
         "editableFields": row.get("editable_fields") or [],
         "instanceType": row.get("instance_type") or "default",
         "maxDurationSeconds": row.get("max_duration_seconds") or 0,
@@ -43,8 +44,23 @@ def _row_to_dict(row: dict) -> dict:
 
 _CARD_COLUMNS = (
     "id, card_type, webapp_id, workflow_id, title, description, llm_note, icon, color, "
-    "cover_url, editable_fields, instance_type, max_duration_seconds, sort_order, created_at"
+    "cover_url, tags, editable_fields, instance_type, max_duration_seconds, sort_order, created_at"
 )
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    """去前後空白、去空字串、去重（保留順序）、最多 10 個、每個最多 30 字"""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tags or []:
+        t = (t or "").strip()[:30]
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+        if len(out) >= 10:
+            break
+    return out
 
 
 @router.get("/api/cards")
@@ -77,15 +93,16 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
 
     instance = req.instanceType if req.instanceType in {"default", "plus"} else "default"
     max_dur = max(0, int(req.maxDurationSeconds or 0))
+    tags = _normalize_tags(req.tags or [])
 
     row = await db.fetch_one(
         f"""
         INSERT INTO cards (
             id, card_type, webapp_id, workflow_id, title, description, llm_note, icon,
-            color, cover_url, editable_fields, instance_type, max_duration_seconds,
+            color, cover_url, tags, editable_fields, instance_type, max_duration_seconds,
             sort_order, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
         RETURNING {_CARD_COLUMNS}
         """,
         card_id,
@@ -98,6 +115,7 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         req.icon,
         req.color,
         req.coverUrl.strip(),
+        tags,
         editable,
         instance,
         max_dur,
@@ -142,6 +160,10 @@ async def admin_update_card(
     if req.maxDurationSeconds is not None:
         sets.append(f"max_duration_seconds = ${next_idx}")
         args.append(max(0, int(req.maxDurationSeconds)))
+        next_idx += 1
+    if req.tags is not None:
+        sets.append(f"tags = ${next_idx}")
+        args.append(_normalize_tags(req.tags))
         next_idx += 1
 
     row = await db.fetch_one(
