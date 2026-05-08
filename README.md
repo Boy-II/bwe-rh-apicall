@@ -93,7 +93,7 @@ npm run dev                      # Vite 跑在 5173，proxy /api → 8000
 | `RUNNINGHUB_BASE_URL` | ⚪ | `https://www.runninghub.ai` | 海外用 `.ai`，大陸用 `.cn` |
 | `GEMINI_API_KEY` | ⚪ |  | OpenAI 相容設定缺少時的 fallback |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | ⚪ |  | AI 助手 OpenAI 相容端點；可改用 admin UI 設定 |
-| `DB_POSTGRESDB_HOST` | ✅ | `localhost` | n8n 同款命名 |
+| `DB_POSTGRESDB_HOST` | ✅ | `localhost` |  |
 | `DB_POSTGRESDB_PORT` | ✅ | `5432` |  |
 | `DB_POSTGRESDB_DATABASE` | ✅ | `rhapi` |  |
 | `DB_POSTGRESDB_USER` | ✅ | `rhapi` |  |
