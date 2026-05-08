@@ -1,4 +1,5 @@
-import { Pencil, Trash2, Plus, GripVertical } from 'lucide-react';
+import { useRef } from 'react';
+import { Pencil, Trash2, Plus, GripVertical, Play } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -121,6 +122,7 @@ interface CardItemProps {
 function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardItemProps) {
   const sortableHook = useSortable({ id: card.id, disabled: !sortable });
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortableHook;
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -130,6 +132,21 @@ function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardI
   };
 
   const themeColor = card.color || '#02dba3';
+  const videoCover = !!card.coverUrl && isVideoCover(card.coverUrl);
+
+  const startPlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.play().catch(() => {
+      /* autoplay 政策可能拒絕；忽略，使用者點開卡片就能看 */
+    });
+  };
+  const stopPlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    v.currentTime = 0;
+  };
 
   return (
     <div
@@ -146,20 +163,30 @@ function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardI
         className="flex flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div
-          className="aspect-[4/3] w-full overflow-hidden"
+          className="relative aspect-[4/3] w-full overflow-hidden"
           style={card.coverUrl ? undefined : { backgroundColor: themeColor }}
+          onMouseEnter={videoCover ? startPlay : undefined}
+          onMouseLeave={videoCover ? stopPlay : undefined}
         >
           {card.coverUrl ? (
-            isVideoCover(card.coverUrl) ? (
-              <video
-                src={card.coverUrl}
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-              />
+            videoCover ? (
+              <>
+                <video
+                  ref={videoRef}
+                  src={card.coverUrl}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+                {/* 沒 hover 時的播放按鈕視覺提示 */}
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-100 transition-opacity group-hover:opacity-0">
+                  <div className="rounded-full bg-black/40 p-2 backdrop-blur-sm">
+                    <Play className="size-5 fill-white text-white" />
+                  </div>
+                </div>
+              </>
             ) : (
               <img
                 src={card.coverUrl}

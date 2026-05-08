@@ -1,6 +1,7 @@
 """FastAPI 應用入口。"""
 
 import json
+import mimetypes
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,6 +9,16 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+
+# 顯式註冊影片 MIME，避免 python:slim 容器 mimetypes db 不全
+# StaticFiles 用 mimetypes.guess_type，沒對應就丟空字串 → 瀏覽器拒播
+for ext, mime in (
+    (".mp4", "video/mp4"),
+    (".webm", "video/webm"),
+    (".mov", "video/quicktime"),
+):
+    mimetypes.add_type(mime, ext)
 
 from app.core import config, db
 from app.core import redis_client

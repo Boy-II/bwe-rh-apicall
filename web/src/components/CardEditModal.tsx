@@ -459,15 +459,26 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
               <div
                 className="flex aspect-square w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted"
                 style={form.coverUrl ? undefined : { backgroundColor: form.color || PALETTE[0] }}
+                onMouseEnter={(e) => {
+                  const v = e.currentTarget.querySelector('video');
+                  v?.play().catch(() => {});
+                }}
+                onMouseLeave={(e) => {
+                  const v = e.currentTarget.querySelector('video');
+                  if (v) {
+                    v.pause();
+                    v.currentTime = 0;
+                  }
+                }}
               >
                 {form.coverUrl ? (
                   isVideoCover(form.coverUrl) ? (
                     <video
                       src={form.coverUrl}
-                      autoPlay
                       muted
                       loop
                       playsInline
+                      preload="metadata"
                       className="h-full w-full object-cover"
                     />
                   ) : (
