@@ -154,16 +154,20 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     }
   };
 
-  const loadWorkflowNodes = async () => {
-    if (!form.workflowId?.trim()) {
-      toast.error('請先填 workflowId');
+  const loadNodes = async () => {
+    const isWebapp = form.cardType === 'webapp';
+    const id = (isWebapp ? form.webappId : form.workflowId)?.trim();
+    if (!id) {
+      toast.error(`請先填 ${isWebapp ? 'webappId' : 'workflowId'}`);
       return;
     }
     setLoadingNodes(true);
     try {
-      const list = await api.proxy.getWorkflowJson(form.workflowId.trim());
+      const list = isWebapp
+        ? await api.proxy.getNodeInfo(id)
+        : await api.proxy.getWorkflowJson(id);
       setNodes(list);
-      if (list.length === 0) toast.warning('此 workflow 沒有可修改節點');
+      if (list.length === 0) toast.warning('沒有可修改節點');
       else toast.success(`載入 ${list.length} 個節點`);
     } catch (e) {
       toast.error((e as Error).message);
@@ -244,7 +248,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
           tags: form.tags || [],
-          editableFields: form.cardType === 'workflow' ? form.editableFields || [] : undefined,
+          editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : undefined,
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
         });
@@ -260,7 +264,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
           tags: form.tags || [],
-          editableFields: form.cardType === 'workflow' ? form.editableFields || [] : [],
+          editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : 'default',
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
         });
@@ -338,13 +342,30 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           {form.cardType === 'webapp' ? (
             <div className="space-y-2">
               <Label htmlFor="webappId">webappId</Label>
-              <Input
-                id="webappId"
-                value={form.webappId || ''}
-                onChange={(e) => set('webappId', e.target.value)}
-                placeholder="AI 應用 ID"
-                disabled={isEdit}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="webappId"
+                  value={form.webappId || ''}
+                  onChange={(e) => set('webappId', e.target.value)}
+                  placeholder="AI 應用 ID"
+                  disabled={isEdit}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="default"
+                  onClick={loadNodes}
+                  disabled={loadingNodes || !form.webappId?.trim()}
+                  title="重新從 RH 抓 webapp 節點"
+                >
+                  {loadingNodes ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  載入節點
+                </Button>
+              </div>
             </div>
           ) : (
             <>
@@ -362,7 +383,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                     type="button"
                     variant="outline"
                     size="default"
-                    onClick={loadWorkflowNodes}
+                    onClick={loadNodes}
                     disabled={loadingNodes || !form.workflowId?.trim()}
                   >
                     {loadingNodes ? (
@@ -375,7 +396,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                 </div>
               </div>
 
-              {/* GPU instance type */}
+              {/* GPU instance type — workflow only */}
               <div className="rounded-md border border-border p-3">
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
@@ -392,86 +413,91 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                   </div>
                 </label>
               </div>
-
-              {/* 編輯白名單 */}
-              <div className="space-y-2">
-                <Label>使用者可編輯的欄位</Label>
-                {nodes.length === 0 ? (
-                  <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-                    點擊「載入節點」抓取此 workflow 的所有可修改欄位，再勾選哪些開放給使用者
-                  </p>
-                ) : (
-                  <div className="max-h-96 overflow-y-auto rounded-md border border-border">
-                    {nodes.map((n) => {
-                      const key = fieldKey(n);
-                      const checked = editableSet.has(key);
-                      const defaultLabel = n.description || n.descriptionEn || n.fieldName;
-                      return (
-                        <div
-                          key={key}
-                          className="border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
-                        >
-                          <div className="flex items-start gap-2">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleField(n)}
-                              className="mt-1 size-4 cursor-pointer"
-                              id={`ed-${key}`}
-                            />
-                            <label
-                              htmlFor={`ed-${key}`}
-                              className="flex-1 cursor-pointer text-sm"
-                            >
-                              <div className="font-medium">{defaultLabel}</div>
-                              <div className="font-mono text-xs text-muted-foreground">
-                                #{n.nodeId} · {n.fieldName}
-                              </div>
-                            </label>
-                            {checked ? (
-                              <select
-                                value={getFieldType(n)}
-                                onChange={(e) => setFieldType(n, e.target.value)}
-                                className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
-                                title="渲染類型（admin 指定）"
-                              >
-                                <option value="STRING">STRING</option>
-                                <option value="INT">INT</option>
-                                <option value="IMAGE">IMAGE</option>
-                                <option value="MASK">MASK 🎨</option>
-                                <option value="VIDEO">VIDEO</option>
-                                <option value="AUDIO">AUDIO</option>
-                                <option value="LIST">LIST</option>
-                              </select>
-                            ) : (
-                              <span className="self-center text-[10px] text-muted-foreground">
-                                {(n.fieldType || 'STRING').toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                          {checked && (
-                            <input
-                              type="text"
-                              value={getDisplayName(n)}
-                              onChange={(e) => setDisplayName(n, e.target.value)}
-                              placeholder={`使用者顯示名（留空＝用「${defaultLabel}」）`}
-                              className="mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs"
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  未勾選的欄位會用 workflow 預設值送出，使用者看不到（適合反向提示詞等固定設定）。
-                  <br />
-                  <b>類型</b>決定使用者表單呈現方式（圖片上傳 / 文字框 / 數字 / 下拉…）；
-                  自動推斷對 IMAGE/VIDEO/AUDIO 不可靠，請手動選擇。
-                </p>
-              </div>
             </>
           )}
+
+          {/* 編輯欄位（webapp / workflow 共用） */}
+          <div className="space-y-2">
+            <Label>使用者可編輯的欄位</Label>
+            {nodes.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+                點擊上方「載入節點」抓取目前可修改欄位
+                {form.cardType === 'webapp'
+                  ? '（webapp：未勾選則 user 端顯示全部欄位、用 RH 推斷類型）'
+                  : '（workflow：勾選哪些開放給 user）'}
+              </p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+                {nodes.map((n) => {
+                  const key = fieldKey(n);
+                  const checked = editableSet.has(key);
+                  const defaultLabel = n.description || n.descriptionEn || n.fieldName;
+                  return (
+                    <div
+                      key={key}
+                      className="border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleField(n)}
+                          className="mt-1 size-4 cursor-pointer"
+                          id={`ed-${key}`}
+                        />
+                        <label
+                          htmlFor={`ed-${key}`}
+                          className="flex-1 cursor-pointer text-sm"
+                        >
+                          <div className="font-medium">{defaultLabel}</div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            #{n.nodeId} · {n.fieldName}
+                          </div>
+                        </label>
+                        {checked ? (
+                          <select
+                            value={getFieldType(n)}
+                            onChange={(e) => setFieldType(n, e.target.value)}
+                            className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
+                            title="渲染類型（admin 指定）"
+                          >
+                            <option value="STRING">STRING</option>
+                            <option value="INT">INT</option>
+                            <option value="IMAGE">IMAGE</option>
+                            <option value="MASK">MASK 🎨</option>
+                            <option value="VIDEO">VIDEO</option>
+                            <option value="AUDIO">AUDIO</option>
+                            <option value="LIST">LIST</option>
+                          </select>
+                        ) : (
+                          <span className="self-center text-[10px] text-muted-foreground">
+                            {(n.fieldType || 'STRING').toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      {checked && (
+                        <input
+                          type="text"
+                          value={getDisplayName(n)}
+                          onChange={(e) => setDisplayName(n, e.target.value)}
+                          placeholder={`使用者顯示名（留空＝用「${defaultLabel}」）`}
+                          className="mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              <b>類型</b>決定 user 表單渲染方式（圖片上傳 / 文字框 / 數字 / 下拉…）；
+              自動推斷對 IMAGE/VIDEO/AUDIO/MASK 不可靠，請手動選擇。
+              <br />
+              {form.cardType === 'webapp'
+                ? '未勾選任何欄位 = 用 RH 預設行為（全部顯示 + RH 推斷類型）；勾選後變白名單。'
+                : '未勾選的欄位會用 workflow 預設值送出（適合反向提示詞等固定設定）。'}
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="maxDuration">最長執行時長（秒）</Label>

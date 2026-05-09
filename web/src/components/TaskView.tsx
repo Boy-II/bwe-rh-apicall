@@ -52,21 +52,22 @@ export function TaskView({ card, onBack, prefill }: Props) {
 
   // workflow 模式下只顯示白名單裡的節點
   const visibleNodes = useMemo(() => {
-    if (!isWorkflow) return allNodes;
-    // workflow 模式：依 editableFields 過濾，並套用 admin 指定的 fieldType / displayName
+    const editableFields = card.editableFields || [];
+
+    // webapp 沒設 editableFields → 顯示所有節點 + 用 RH 推斷類型（向後相容）
+    if (!isWorkflow && editableFields.length === 0) return allNodes;
+
+    // workflow 或有 editableFields 的 webapp → 套白名單 + admin fieldType/displayName 覆寫
     const overrides = new Map(
-      (card.editableFields || []).map(
+      editableFields.map(
         (e) =>
           [
             fieldKey(e),
-            {
-              fieldType: e.fieldType,
-              displayName: e.displayName,
-            },
+            { fieldType: e.fieldType, displayName: e.displayName },
           ] as const,
       ),
     );
-    const allowed = new Set((card.editableFields || []).map(fieldKey));
+    const allowed = new Set(editableFields.map(fieldKey));
     return allNodes
       .filter((n) => allowed.has(fieldKey(n)))
       .map((n) => {
@@ -75,7 +76,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
         return {
           ...n,
           fieldType: o.fieldType || n.fieldType,
-          // displayName 覆寫節點顯示文字（NodeRenderer 用 description 顯示）
+          // displayName 覆寫節點顯示文字
           description: o.displayName?.trim() ? o.displayName : n.description,
         };
       });
