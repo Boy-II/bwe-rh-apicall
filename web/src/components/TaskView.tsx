@@ -111,15 +111,21 @@ export function TaskView({ card, onBack, prefill }: Props) {
       visibleNodes.map((n) => {
         const key = `${n.nodeId}::${n.fieldName}`;
         const hit = prefillMap.get(key);
-        if (!hit) return {} as DraftNode;
+        const ft = (n.fieldType || '').toUpperCase();
+        const isFileType = ft === 'IMAGE' || ft === 'VIDEO' || ft === 'AUDIO' || ft === 'MASK';
 
-        // seed 欄位重跑時自動換新值（避免結果完全一樣）
+        if (!hit) {
+          // 新開卡片（非重跑）：圖片/影片/音訊/MASK 欄位預設清除（不帶 workflow 預設值）
+          // 其他類型保持 {} 讓 fieldValue 顯示 workflow 預設讓使用者編輯
+          return isFileType ? ({ fieldValue: '' } as DraftNode) : ({} as DraftNode);
+        }
+
+        // 重跑：seed 自動換值；其他用 prefill 帶入
         const isSeed = /seed/i.test(n.fieldName);
         const fieldValue = isSeed ? randomSeed() : hit.fieldValue;
 
         const draft: DraftNode = { ...n, fieldValue };
-        const ft = (n.fieldType || '').toUpperCase();
-        if (ft === 'IMAGE' || ft === 'VIDEO' || ft === 'AUDIO') {
+        if (isFileType) {
           if (typeof hit.fieldValue === 'string') draft.uploadedFileName = hit.fieldValue;
         }
         return draft;
@@ -137,7 +143,6 @@ export function TaskView({ card, onBack, prefill }: Props) {
     try {
       let submitRes;
       if (isWorkflow) {
-        // workflow: 只送出白名單欄位的使用者修改
         const finalNodes = applyEdits(visibleNodes, drafts);
         submitRes = await api.proxy.submitWorkflowTask(
           card.workflowId,

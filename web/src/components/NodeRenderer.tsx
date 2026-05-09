@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertCircle, Brush } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, Brush, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -101,8 +101,8 @@ export function NodeRenderer({ nodes, drafts, onChange }: Props) {
               node={node}
               draft={drafts[i] || {}}
               onChange={(p) => {
-                // 換來源圖時清空 mask
-                if (isSource && p.uploadedFileName && maskIdx >= 0) {
+                // source 圖被「上傳新檔」或「清除」都要清空 mask（避免對應到錯的圖）
+                if (isSource && maskIdx >= 0 && 'uploadedFileName' in p) {
                   setField(maskIdx, {
                     uploadedFileName: null,
                     fieldValue: '',
@@ -348,7 +348,16 @@ function FileField({
     [fileType, labelText, onChange],
   );
 
-  const current = draft.uploadedFileName || node.fieldValue || '';
+  // 顯示優先序：用戶上傳的 > 用戶手動修改的 fieldValue（含明確清空的 ""）> workflow 預設
+  let current = '';
+  if (draft.uploadedFileName) {
+    current = String(draft.uploadedFileName);
+  } else if (draft.fieldValue !== undefined) {
+    // 用戶有過動作（含清除 → fieldValue=""）
+    current = String(draft.fieldValue);
+  } else {
+    current = String(node.fieldValue ?? '');
+  }
 
   return (
     <div
@@ -379,8 +388,29 @@ function FileField({
         if (file) handleFile(file);
       }}
     >
-      <div className="text-xs text-muted-foreground">
-        {current ? `目前：${String(current)}` : '尚未上傳'}
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="truncate">
+          {current ? `目前：${String(current)}` : '尚未上傳'}
+        </span>
+        {current && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatus('idle');
+              setErrorMsg('');
+              setPreviewUrl('');
+              onChange({
+                uploadedFileName: null,
+                fieldValue: '',
+                localImageUrl: undefined,
+              });
+            }}
+            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title="清除（不使用任何圖片）"
+          >
+            <X className="size-3" /> 清除
+          </button>
+        )}
       </div>
       <div className="mt-3 flex flex-col items-center gap-2 text-center">
         <button
