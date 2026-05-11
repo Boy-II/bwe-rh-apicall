@@ -110,6 +110,7 @@ async def get_workflow_json(
     resp = await runninghub.post_with_apikey(
         "/api/openapi/getJsonApiFormat",
         {"workflowId": req.workflowId},
+        idempotent=True,
     )
     if resp.get("code") != 0:
         return resp
@@ -244,7 +245,9 @@ async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require
 
 @router.post("/api/proxy/queryTaskOutputs")
 async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.require_user)):
-    resp = await runninghub.post_with_bearer("/openapi/v2/query", {"taskId": req.taskId})
+    resp = await runninghub.post_with_bearer(
+        "/openapi/v2/query", {"taskId": req.taskId}, idempotent=True
+    )
 
     # RH /v2/query 成功時是 flat shape（無 envelope）；錯誤時才有 {code: -1, msg: ...}
     is_error_envelope = isinstance(resp.get("code"), int) and resp.get("code") != 0
@@ -344,7 +347,7 @@ async def upload_file(
 
 @router.post("/api/proxy/getAccountStatus")
 async def get_account_status(_user: str = Depends(auth.require_user)):
-    return await runninghub.post_with_apikey("/api/user/getAccountStatus", {})
+    return await runninghub.post_with_apikey("/api/user/getAccountStatus", {}, idempotent=True)
 
 
 # ===== AI 聊天 =====

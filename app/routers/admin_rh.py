@@ -20,7 +20,9 @@ async def admin_account_status(_: str = Depends(auth.require_admin)):
     body: {apikey} + header Authorization: Bearer ...
     回傳: {code, msg, data: {remainCoins, currentTaskCounts, remainMoney, currency, apiType}}
     """
-    return await runninghub.post_with_bearer_and_apikey("/uc/openapi/accountStatus")
+    return await runninghub.post_with_bearer_and_apikey(
+        "/uc/openapi/accountStatus", idempotent=True
+    )
 
 
 @router.post("/api/admin/aiapp-list")
@@ -37,7 +39,7 @@ async def admin_aiapp_list(req: AppListRequest, _: str = Depends(auth.require_ad
     if req.sort == "HOTTEST" and req.days:
         body["days"] = req.days
 
-    resp = await runninghub.post_with_bearer("/openapi/v2/aiapp/list", body)
+    resp = await runninghub.post_with_bearer("/openapi/v2/aiapp/list", body, idempotent=True)
     if resp.get("code") != 0:
         return resp
 
