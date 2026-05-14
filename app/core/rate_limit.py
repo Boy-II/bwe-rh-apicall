@@ -7,6 +7,7 @@
     await check_rate_limit(user_id, "chat", 10, 60)
 """
 
+import secrets
 import time
 
 from fastapi import HTTPException, Request, Depends
@@ -32,12 +33,14 @@ async def check_rate_limit(
     pipe = redis.pipeline()
     pipe.zremrangebyscore(key, 0, window_start)
     pipe.zcard(key)
-    pipe.zadd(key, {f"{now}:{int(now * 1000) % 100000}": now})
+    pipe.zadd(key, {f"{now}:{secrets.token_hex(4)}": now})
     pipe.expire(key, window_seconds + 5)
-    _, current_count, _, _ = await pipe.execute()
+    pipe.zrange(key, 0, 0, withscores=True)  # 最舊一筆，計算實際剩餘時間
+    _, current_count, _, _, oldest = await pipe.execute()
 
     if current_count >= limit:
-        retry_after = max(1, int(window_seconds))
+        oldest_score = oldest[0][1] if oldest else now - window_seconds
+        retry_after = max(1, int(oldest_score + window_seconds - now) + 1)
         raise HTTPException(
             status_code=429,
             detail=f"請求過於頻繁，請 {retry_after} 秒後再試",

@@ -1,18 +1,23 @@
 """RunningHub API 代理：三種 auth 模式 + 暫時性錯誤重試。"""
 
 import asyncio
+import logging
 
 import httpx
 from fastapi import HTTPException
 
 from app.core import config
 
+logger = logging.getLogger(__name__)
+
 # 共享 client：lifespan 啟停管理
 _client: httpx.AsyncClient | None = None
 
 # 單次請求 timeout：connect 慢就快點放棄；read 給 45s 但靠 retry 兜底。
 # 上層 llm.py 的呼叫會帶自己的 timeout=，不受這裡影響。
-_DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0, write=20.0, pool=10.0)
+_DEFAULT_TIMEOUT = httpx.Timeout(
+    connect=10.0, read=config.RH_TIMEOUT_READ, write=20.0, pool=10.0
+)
 
 # RH 偶發連線錯誤（請求未送達）— 任何端點都可安全重試
 _CONNECT_ERRORS: tuple = (
@@ -79,9 +84,9 @@ async def _send_with_retry(
             if attempt + 1 >= max_attempts:
                 break
             delay = 2 ** attempt
-            print(
-                f"[rh] retry {attempt + 1}/{max_attempts} "
-                f"after {type(e).__name__}: {e} (sleep {delay}s)"
+            logger.warning(
+                "retry %d/%d after %s (sleep %ds)",
+                attempt + 1, max_attempts, type(e).__name__, delay,
             )
             await asyncio.sleep(delay)
     assert last_exc is not None
@@ -92,7 +97,8 @@ def _raise_upstream(e: Exception) -> None:
     """把 httpx 例外轉成對應的 HTTPException 給前端。"""
     if isinstance(e, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="上游 API 請求逾時")
-    raise HTTPException(status_code=502, detail=f"請求失敗: {e}")
+    logger.warning("upstream request failed: %s", e)
+    raise HTTPException(status_code=502, detail="上游 API 請求失敗")
 
 
 # ===== 三種 auth 模式 =====
@@ -179,6 +185,24 @@ async def post_with_bearer_and_apikey(endpoint: str, body: dict | None = None, *
         resp = await _send_with_retry(
             lambda: client().post(url, json=payload, headers=headers),
             idempotent=idempotent,
+        )
+        return resp.json()
+    except Exception as e:
+        _raise_upstream(e)
+
+
+async def cancel_task(task_id: str) -> dict:
+    """POST /task/openapi/cancel（body apiKey + Authorization: Bearer）。"""
+    url = f"{_base_url()}/task/openapi/cancel"
+    payload = {"apiKey": _api_key(), "taskId": task_id}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_api_key()}",
+    }
+    try:
+        resp = await _send_with_retry(
+            lambda: client().post(url, json=payload, headers=headers),
+            idempotent=False,
         )
         return resp.json()
     except Exception as e:

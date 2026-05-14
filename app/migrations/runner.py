@@ -12,10 +12,13 @@
 
 import asyncio
 import hashlib
+import logging
 import sys
 from pathlib import Path
 
 from app.core import db
+
+logger = logging.getLogger(__name__)
 
 
 MIGRATIONS_DIR = Path(__file__).parent
@@ -62,22 +65,21 @@ async def apply_migrations() -> list[str]:
                     _checksum(content),
                 )
         newly_applied.append(path.name)
-        print(f"[Migration] 套用 {path.name}")
+        logger.info("套用 %s", path.name)
 
     return newly_applied
 
 
 async def _cli() -> int:
-    print("[Migration] 連線資料庫...")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    logger.info("連線資料庫...")
     await db.init_pool()
     try:
         result = await apply_migrations()
         if result:
-            print(f"[Migration] 完成，套用 {len(result)} 個檔案：")
-            for name in result:
-                print(f"  - {name}")
+            logger.info("完成，套用 %d 個檔案：%s", len(result), result)
         else:
-            print("[Migration] 無新檔案需套用")
+            logger.info("無新檔案需套用")
         return 0
     finally:
         await db.close_pool()

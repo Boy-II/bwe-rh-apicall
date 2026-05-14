@@ -1,10 +1,48 @@
 """RunningHub + AI chat 代理端點，全部需 user token。"""
 
 import json
+import logging
 import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from app.core import auth, config, db
+from app.core.rate_limit import rate_limit
+from app.schemas import (
+    AIChatRequest,
+    NodeInfoRequest,
+    SubmitTaskRequest,
+    SubmitWorkflowRequest,
+    TaskQueryRequest,
+    WorkflowFormatRequest,
+)
+from app.services import llm, runninghub
+
+logger = logging.getLogger(__name__)
+
+
+def _is_rh_error(resp: dict) -> bool:
+    """RH 回應是錯誤 envelope（有 code 且非 0）。"""
+    return isinstance(resp.get("code"), int) and resp.get("code") != 0
+
+
+def _to_float(v) -> float | None:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_int(v) -> int | None:
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (ValueError, TypeError):
+        return None
 
 
 def _clean_node_info_list(items: list) -> list:
@@ -26,18 +64,6 @@ def _clean_node_info_list(items: list) -> list:
             "fieldValue": it.get("fieldValue"),
         })
     return out
-
-from app.core import auth, config, db
-from app.core.rate_limit import rate_limit
-from app.schemas import (
-    AIChatRequest,
-    NodeInfoRequest,
-    SubmitTaskRequest,
-    SubmitWorkflowRequest,
-    TaskQueryRequest,
-    WorkflowFormatRequest,
-)
-from app.services import llm, runninghub
 
 router = APIRouter()
 
@@ -166,7 +192,7 @@ async def submit_workflow_task(
                     datetime.now(timezone.utc),
                 )
             except Exception as e:
-                print(f"[tasks] workflow insert 失敗: {e}")
+                logger.warning("workflow insert 失敗: %s", e)
     return resp
 
 
@@ -204,24 +230,14 @@ async def submit_task(req: SubmitTaskRequest, user_id: str = Depends(auth.requir
                 )
             except Exception as e:
                 # 記錄失敗不阻擋使用者
-                print(f"[tasks] insert 失敗: {e}")
+                logger.warning("task insert 失敗: %s", e)
     return resp
 
 
 @router.post("/api/proxy/cancelTask")
 async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require_user)):
-    """取消執行中任務（POST /task/openapi/cancel，body apiKey + Bearer）。"""
-    url = f"{config.RUNNINGHUB_BASE_URL}/task/openapi/cancel"
-    payload = {"apiKey": config.RUNNINGHUB_API_KEY, "taskId": req.taskId}
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {config.RUNNINGHUB_API_KEY}",
-    }
-    try:
-        rh_resp = await runninghub.client().post(url, json=payload, headers=headers)
-        resp = rh_resp.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"取消請求失敗：{e}")
+    """取消執行中任務。"""
+    resp = await runninghub.cancel_task(req.taskId)
 
     # 成功才標記 DB（用戶自己的任務）
     if resp.get("code") == 0:
@@ -238,7 +254,7 @@ async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require
                 user_id,
             )
         except Exception as e:
-            print(f"[tasks] cancel update 失敗: {e}")
+            logger.warning("cancel update 失敗: %s", e)
 
     return resp
 
@@ -250,29 +266,11 @@ async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.
     )
 
     # RH /v2/query 成功時是 flat shape（無 envelope）；錯誤時才有 {code: -1, msg: ...}
-    is_error_envelope = isinstance(resp.get("code"), int) and resp.get("code") != 0
-    if not is_error_envelope:
+    if not _is_rh_error(resp):
         data = resp.get("data") if isinstance(resp.get("data"), dict) else resp
         status = data.get("status") or data.get("taskStatus") or ""
         if status in {"SUCCESS", "FAILED", "TIMEOUT"}:
             usage = data.get("usage") or {}
-
-            def _to_float(v):
-                if v is None or v == "":
-                    return None
-                try:
-                    return float(v)
-                except (ValueError, TypeError):
-                    return None
-
-            def _to_int(v):
-                if v is None or v == "":
-                    return None
-                try:
-                    return int(float(v))
-                except (ValueError, TypeError):
-                    return None
-
             cost_val = _to_float(usage.get("taskCostTime") or data.get("taskCostTime"))
             consume_coins = _to_int(usage.get("consumeCoins"))
             consume_money = _to_float(usage.get("consumeMoney"))
@@ -325,7 +323,7 @@ async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.
                     user_id,
                 )
             except Exception as e:
-                print(f"[tasks] update 失敗: {e}")
+                logger.warning("task update 失敗: %s", e)
     return resp
 
 

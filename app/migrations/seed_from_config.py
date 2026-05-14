@@ -10,11 +10,14 @@
 
 import asyncio
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core import db
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_config_path() -> Path:
@@ -41,7 +44,7 @@ async def _import_cards(cards: list[dict]) -> int:
         return 0
     existing = await db.fetch_val("SELECT COUNT(*) FROM cards")
     if existing > 0:
-        print(f"[Seed] cards 表已有 {existing} 筆，跳過匯入")
+        logger.info("cards 表已有 %d 筆，跳過匯入", existing)
         return 0
 
     rows = []
@@ -66,7 +69,7 @@ async def _import_cards(cards: list[dict]) -> int:
         """,
         rows,
     )
-    print(f"[Seed] 匯入 {len(rows)} 張卡片")
+    logger.info("匯入 %d 張卡片", len(rows))
     return len(rows)
 
 
@@ -75,7 +78,7 @@ async def _import_users(users: list[dict]) -> int:
         return 0
     existing = await db.fetch_val("SELECT COUNT(*) FROM users")
     if existing > 0:
-        print(f"[Seed] users 表已有 {existing} 筆，跳過匯入")
+        logger.info("users 表已有 %d 筆，跳過匯入", existing)
         return 0
 
     rows = []
@@ -98,7 +101,7 @@ async def _import_users(users: list[dict]) -> int:
         """,
         rows,
     )
-    print(f"[Seed] 匯入 {len(rows)} 個用戶")
+    logger.info("匯入 %d 個用戶", len(rows))
     return len(rows)
 
 
@@ -131,7 +134,7 @@ async def _import_settings(cfg: dict) -> int:
         )
         if "INSERT 0 1" in result:
             inserted += 1
-    print(f"[Seed] 寫入 {inserted} 筆 settings（已存在的 key 保持不動）")
+    logger.info("寫入 %d 筆 settings（已存在的 key 保持不動）", inserted)
     return inserted
 
 
@@ -139,14 +142,14 @@ async def run_seed() -> bool:
     """執行匯入；若 config.json 不存在則跳過。回傳是否實際做了匯入。"""
     config_path = _resolve_config_path()
     if not config_path.exists():
-        print(f"[Seed] 找不到 {config_path.name}，跳過匯入（DB 為主）")
+        logger.info("找不到 %s，跳過匯入（DB 為主）", config_path.name)
         return False
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
     except Exception as e:
-        print(f"[Seed] config.json 解析失敗：{e}")
+        logger.warning("config.json 解析失敗：%s", e)
         return False
 
     cards_count = await _import_cards(cfg.get("cards", []))
@@ -159,15 +162,16 @@ async def run_seed() -> bool:
         backup = config_path.with_suffix(config_path.suffix + ".migrated.bak")
         try:
             config_path.rename(backup)
-            print(f"[Seed] 已將 {config_path.name} 改名為 {backup.name}")
+            logger.info("已將 %s 改名為 %s", config_path.name, backup.name)
         except Exception as e:
-            print(f"[Seed] 改名 {config_path.name} 失敗（可手動處理）：{e}")
+            logger.warning("改名 %s 失敗（可手動處理）：%s", config_path.name, e)
 
     return did_anything
 
 
 async def _cli() -> int:
-    print("[Seed] 連線資料庫...")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    logger.info("連線資料庫...")
     await db.init_pool()
     try:
         await run_seed()

@@ -1,9 +1,14 @@
 """AI 助手聊天代理：OpenAI 相容格式優先，無設定時 fallback Gemini。"""
 
+import time
+
 import httpx
 from fastapi import HTTPException
 
 from app.core import config
+
+_model_cache: dict[str, tuple[list[str], float]] = {}
+_MODEL_CACHE_TTL = 300  # 5 分鐘
 
 
 _DEFAULT_BASE_PROMPT = "你是 BWE AI 應用平台的 AI 助手，協助使用者選擇 AI 應用並撰寫提示詞。"
@@ -168,7 +173,7 @@ async def _chat_gemini(
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-preview-04-17:generateContent?key={config.GEMINI_API_KEY}"
+        f"{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
     )
     try:
         resp = await http_client.post(url, json=payload, timeout=30.0)
@@ -190,6 +195,11 @@ async def _chat_gemini(
 
 
 async def fetch_models(http_client: httpx.AsyncClient, base_url: str, api_key: str) -> list[str]:
+    cache_key = f"{base_url}:{(api_key or '')[:8]}"
+    cached = _model_cache.get(cache_key)
+    if cached and time.time() - cached[1] < _MODEL_CACHE_TTL:
+        return cached[0]
+
     base = base_url.rstrip("/")
     url = f"{base}/v1/models"
     headers = {}
@@ -198,8 +208,9 @@ async def fetch_models(http_client: httpx.AsyncClient, base_url: str, api_key: s
     try:
         resp = await http_client.get(url, headers=headers, timeout=10.0)
         data = resp.json()
-        models = [m["id"] for m in data.get("data", [])]
-        return sorted(models)
+        models = sorted(m["id"] for m in data.get("data", []))
+        _model_cache[cache_key] = (models, time.time())
+        return models
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="模型列表請求逾時")
     except Exception as e:

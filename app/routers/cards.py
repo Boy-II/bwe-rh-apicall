@@ -213,14 +213,16 @@ async def admin_reorder_cards(
     """以新排序覆寫 sort_order：sort_order = ids 中的索引位置。"""
     if not req.ids:
         return {"success": True}
-    async with db.pool().acquire() as conn:
-        async with conn.transaction():
-            for index, card_id in enumerate(req.ids):
-                await conn.execute(
-                    "UPDATE cards SET sort_order = $2, updated_at = NOW() WHERE id = $1",
-                    card_id,
-                    index,
-                )
+    orders = list(range(len(req.ids)))
+    await db.execute(
+        """
+        UPDATE cards SET sort_order = v.ord, updated_at = NOW()
+        FROM (SELECT unnest($1::text[]) AS id, unnest($2::int[]) AS ord) AS v
+        WHERE cards.id = v.id
+        """,
+        req.ids,
+        orders,
+    )
     return {"success": True}
 
 

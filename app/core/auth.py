@@ -47,6 +47,10 @@ async def require_admin(request: Request) -> str:
     token = request.headers.get("X-Admin-Token", "")
     if not await is_admin_token_valid(token):
         raise HTTPException(status_code=401, detail="需要管理員權限")
+    # 每次請求刷新 TTL，讓持續使用中的 admin session 不會過期
+    await redis_client.client().expire(
+        f"{ADMIN_TOKEN_PREFIX}{token}", ADMIN_TOKEN_TTL_SECONDS
+    )
     return token
 
 

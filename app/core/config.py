@@ -4,13 +4,16 @@ import os
 from dotenv import load_dotenv
 
 # 自動載入 .env（本地開發用；生產環境靠 Zeabur 注入）
-load_dotenv()
+# override=False：env 已存在的 key 不覆寫（生產環境 env 優先）
+load_dotenv(override=False)
 
 # ===== env-only：runtime 不可改 =====
 RUNNINGHUB_API_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 RUNNINGHUB_BASE_URL = os.environ.get("RUNNINGHUB_BASE_URL", "https://www.runninghub.ai")
+RH_TIMEOUT_READ = float(os.environ.get("RH_TIMEOUT_READ", "45"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
 
 POLLING_INTERVAL = int(os.environ.get("POLLING_INTERVAL", "3000"))
 MAX_POLLING_RETRIES = int(os.environ.get("MAX_POLLING_RETRIES", "200"))

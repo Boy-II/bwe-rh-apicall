@@ -1,6 +1,7 @@
 """FastAPI 應用入口。"""
 
 import json
+import logging
 import mimetypes
 import secrets
 from contextlib import asynccontextmanager
@@ -9,6 +10,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+from app.core.logging_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 # 顯式註冊影片 MIME，避免 python:slim 容器 mimetypes db 不全
@@ -24,7 +30,7 @@ from app.core import config, db
 from app.core import redis_client
 from app.migrations.runner import apply_migrations
 from app.migrations.seed_from_config import run_seed
-from app.routers import admin_ai, admin_rh, auth, cards, proxy, tasks, users
+from app.routers import admin_ai, admin_rh, auth, cards, health, proxy, tasks, users
 from app.services import runninghub
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -67,9 +73,9 @@ async def lifespan(app: FastAPI):
             new_secret,
         )
         config.set_db_setting("jwt_secret", new_secret)
-        print("[Lifespan] 自動生成 jwt_secret 並寫入 settings 表")
+        logger.info("自動生成 jwt_secret 並寫入 settings 表")
 
-    print("[Lifespan] 啟動完成")
+    logger.info("啟動完成")
 
     yield
 
@@ -83,6 +89,7 @@ app = FastAPI(title="BWE AI Platform API", version="3.1.0", lifespan=lifespan)
 
 
 # ===== Routers =====
+app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(cards.router)
 app.include_router(users.router)
@@ -94,8 +101,7 @@ app.include_router(proxy.router)
 
 # ===== 靜態檔案 =====
 # 卡片預覽圖（持久化）
-from pathlib import Path as _Path
-COVERS_DIR = _Path("/card/covers") if _Path("/card").exists() else (ROOT_DIR / "covers")
+COVERS_DIR = Path("/card/covers") if Path("/card").exists() else (ROOT_DIR / "covers")
 COVERS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/covers", StaticFiles(directory=COVERS_DIR), name="covers")
 
