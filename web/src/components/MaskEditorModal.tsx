@@ -30,6 +30,7 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
   const [tool, setTool] = useState<Tool>('brush');
   const [brushSize, setBrushSize] = useState(40);
   const [brushColor, setBrushColor] = useState('#ff3333');
+  const [brushOpacity, setBrushOpacity] = useState(70);
   const [feather, setFeather] = useState(0);
   const [showMask, setShowMask] = useState(true);
   const [confirming, setConfirming] = useState(false);
@@ -160,6 +161,11 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
     pushHistory();
   }, [pushHistory]);
 
+  const handleColorChange = useCallback((color: string) => {
+    clearAll();
+    setBrushColor(color);
+  }, [clearAll]);
+
   // ----- 鍵盤快捷鍵 -----
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -226,10 +232,12 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
 
     if (tool === 'brush') {
       ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = brushOpacity / 100;
       ctx.fillStyle = brushColor;
       ctx.strokeStyle = brushColor;
     } else {
       ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1;
     }
     drawDot(ctx, p.x, p.y);
   };
@@ -245,10 +253,12 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
     const last = lastPointRef.current;
     if (last) {
       if (tool === 'brush') {
-        ctx.strokeStyle = brushColor;
         ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = brushOpacity / 100;
+        ctx.strokeStyle = brushColor;
       } else {
         ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1;
       }
       drawLine(ctx, last, p);
     } else {
@@ -441,7 +451,7 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
                 <button
                   key={color}
                   title={label}
-                  onClick={() => setBrushColor(color)}
+                  onClick={() => handleColorChange(color)}
                   className={cn(
                     'size-7 rounded-full border-2 transition-transform',
                     brushColor === color ? 'border-foreground scale-110' : 'border-transparent hover:scale-105',
@@ -450,6 +460,22 @@ export function MaskEditorModal({ imageUrl, initialMaskDataUrl, onConfirm, onCan
                 />
               ))}
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label>筆刷透明度</Label>
+              <span className="text-xs text-muted-foreground">{brushOpacity}%</span>
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={10}
+              value={brushOpacity}
+              onChange={(e) => setBrushOpacity(parseInt(e.target.value))}
+              className="w-full"
+            />
           </div>
 
           <div className="space-y-1">
