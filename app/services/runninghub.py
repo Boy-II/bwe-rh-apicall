@@ -72,7 +72,7 @@ async def _send_with_retry(
     idempotent=True  → 連線錯誤 + read timeout 都重試（query / list / get 類）
     idempotent=False → 只重試「請求未送達」的 connect 錯誤（submit / upload 類，
                       避免重複建立任務或扣費）
-    backoff: 1s, 2s（最多 3 次嘗試 → 兩次重試）
+    backoff: 3s, 5s（最多 3 次嘗試 → 兩次重試）
     """
     retry_on = _READ_ERRORS if idempotent else _CONNECT_ERRORS
     last_exc: Exception | None = None
@@ -83,7 +83,7 @@ async def _send_with_retry(
             last_exc = e
             if attempt + 1 >= max_attempts:
                 break
-            delay = 2 ** attempt
+            delay = 3 if attempt == 0 else 5
             logger.warning(
                 "retry %d/%d after %s (sleep %ds)",
                 attempt + 1, max_attempts, type(e).__name__, delay,

@@ -67,8 +67,10 @@ async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
 
   if (!res.ok) {
     const msg =
-      (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
-      `HTTP ${res.status}`;
+      res.status === 502
+        ? '網路不穩定，稍後再試'
+        : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
+          `HTTP ${res.status}`;
     throw new ApiError(String(msg), res.status);
   }
   return data as T;
@@ -157,7 +159,10 @@ export const cards = {
     let data: unknown;
     try { data = JSON.parse(text); } catch { data = text; }
     if (!res.ok) {
-      const msg = (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) || `HTTP ${res.status}`;
+      const msg =
+        res.status === 502
+          ? '網路不穩定，稍後再試'
+          : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) || `HTTP ${res.status}`;
       throw new ApiError(String(msg), res.status);
     }
     return data as { coverUrl: string };
@@ -341,8 +346,10 @@ export const proxy = {
     }
     if (!res.ok) {
       const msg =
-        (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
-        `HTTP ${res.status}`;
+        res.status === 502
+          ? '網路不穩定，稍後再試'
+          : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
+            `HTTP ${res.status}`;
       throw new ApiError(String(msg), res.status);
     }
     const env = data as RhEnvelope<UploadResult>;
