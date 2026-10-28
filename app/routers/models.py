@@ -117,10 +117,14 @@ async def submit_model(req: ModelSubmit, user_id: str = Depends(auth.require_use
     )
     try:
         data = await model_api.submit(model["endpoint"], payload)
-    except HTTPException:
+    except HTTPException as e:
         await db.execute(
-            "UPDATE tasks SET status='FAILED',error_message='提交未完成，結果不明時請查看 RunningHub 紀錄',completed_at=NOW() WHERE id=$1",
+            "UPDATE tasks SET status='FAILED',error_message=$2,completed_at=NOW() WHERE id=$1",
             local_id,
+            # 422 is a definite upstream rejection; other failures leave the result unknown.
+            e.detail
+            if e.status_code == 422
+            else "提交未完成，結果不明時請查看 RunningHub 紀錄",
         )
         raise
     await db.execute(

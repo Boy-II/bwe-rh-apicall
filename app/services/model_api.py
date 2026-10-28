@@ -1,6 +1,7 @@
 """Standard model API; deliberately separate from legacy workflow uploads."""
 
 import asyncio
+import logging
 
 import httpx
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 from app.core import config
 from app.services import runninghub
 
+logger = logging.getLogger(__name__)
 
 async def _post(path: str, *, payload=None, files=None, idempotent=False) -> dict:
     if not config.RUNNINGHUB_API_KEY:
@@ -41,6 +43,19 @@ async def _post(path: str, *, payload=None, files=None, idempotent=False) -> dic
             raise HTTPException(
                 status_code=502, detail="模型 API 回應格式錯誤"
             ) from None
+        # v2 rejects with HTTP 200 + errorCode/errorMessage and an empty taskId;
+        # such a request created no task, so surface the upstream reason.
+        if isinstance(data, dict) and data.get("errorCode") not in (None, "", "0", 0):
+            logger.warning(
+                "RunningHub %s rejected: errorCode=%s errorMessage=%s",
+                path,
+                data.get("errorCode"),
+                data.get("errorMessage"),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"RunningHub 拒絕請求（{data.get('errorCode')}）：{data.get('errorMessage') or '未提供原因'}",
+            )
         if (
             not response.is_success
             or not isinstance(data, dict)
