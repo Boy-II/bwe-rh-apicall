@@ -14,7 +14,8 @@ import { ThemeToggle } from './ThemeToggle';
 import { useAuth, isAdmin } from '@/lib/auth-store';
 import { mergeLastUsed, sortCards, type CardWithUsage } from '@/lib/card-utils';
 import api from '@/lib/api';
-import type { Card } from '@/lib/types';
+import { filterModelCards } from '@/lib/model-utils';
+import type { Card, Category, ImageMode } from '@/lib/types';
 
 interface Props {
   onSelect: (card: Card) => void;
@@ -32,6 +33,8 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
   const [aiOpen, setAiOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<Category | 'all'>('all');
+  const [imageMode, setImageMode] = useState<ImageMode>('');
 
   // 卡片所有 tags 集合（去重）
   const allTags = useMemo(() => {
@@ -41,16 +44,10 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
   }, [cards]);
 
   // 過濾後的清單：title / description / tags 任一命中
-  const visibleCards = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return cards;
-    return cards.filter((c) => {
-      const inTitle = c.title.toLowerCase().includes(q);
-      const inDesc = (c.description || '').toLowerCase().includes(q);
-      const inTags = (c.tags || []).some((t) => t.toLowerCase().includes(q));
-      return inTitle || inDesc || inTags;
-    });
-  }, [cards, search]);
+  const visibleCards = useMemo(
+    () => filterModelCards(cards, category, imageMode, search),
+    [cards, category, imageMode, search],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -84,9 +81,7 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
   const handleReorder = async (newOrderIds: string[]) => {
     // 樂觀更新：先在本地重排，後台失敗才復原
     const map = new Map(cards.map((c) => [c.id, c]));
-    const reordered = newOrderIds
-      .map((id) => map.get(id))
-      .filter((c): c is CardWithUsage => !!c);
+    const reordered = newOrderIds.map((id) => map.get(id)).filter((c): c is CardWithUsage => !!c);
     setCards(reordered);
     try {
       await api.cards.reorder(newOrderIds);
@@ -123,7 +118,8 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
             </Button>
             <ThemeToggle />
             <span className="text-sm text-muted-foreground">
-              {user?.username} {admin && <span className="text-primary">（管理員）</span>}
+              {user?.name || user?.username}{' '}
+              {admin && <span className="text-primary">（管理員）</span>}
             </span>
             <Button variant="ghost" size="sm" onClick={() => logout()}>
               登出
@@ -132,6 +128,50 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">
+        <nav aria-label="應用分類" className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ['all', '全部'],
+              ['image', '圖片'],
+              ['video', '影片'],
+              ['audio', '音源'],
+            ] as const
+          ).map(([key, label]) => (
+            <Button
+              key={key}
+              variant="outline"
+              aria-pressed={category === key}
+              className={category === key ? 'border-primary bg-primary/10 text-foreground' : ''}
+              size="sm"
+              onClick={() => {
+                setCategory(key);
+                setImageMode('');
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </nav>
+        {category === 'image' && (
+          <nav aria-label="圖片生成方式" className="mb-6 flex gap-2">
+            {(
+              [
+                ['', '全部圖片'],
+                ['text-to-image', '文生圖'],
+                ['image-to-image', '圖生圖'],
+              ] as const
+            ).map(([key, label]) => (
+              <Button
+                key={key}
+                variant={imageMode === key ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setImageMode(key)}
+              >
+                {label}
+              </Button>
+            ))}
+          </nav>
+        )}
         {!loading && cards.length > 0 && (
           <div className="mb-6 space-y-3">
             <div className="relative">
@@ -188,7 +228,7 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
           <CardGrid
             cards={visibleCards}
             isAdmin={admin}
-            disableSort={!!search.trim()}
+            disableSort={!!search.trim() || category !== 'all' || !!imageMode}
             onSelect={onSelect}
             onEdit={(c) => {
               setEditTarget(c);

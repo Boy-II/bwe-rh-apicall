@@ -44,7 +44,7 @@ async def my_tasks(
         f"""
         SELECT id, card_id, card_title, card_type, webapp_id, workflow_id, rh_task_id, status,
                cost_time, consume_coins, consume_money, third_party_consume_money,
-               results, error_message, node_input, created_at, completed_at
+               results, error_message, node_input, created_at, completed_at, model_key
         FROM tasks
         WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '{int(days)} days'
         ORDER BY created_at DESC
@@ -63,17 +63,24 @@ async def my_tasks(
                 "cardType": r["card_type"] or "webapp",
                 "webappId": r["webapp_id"],
                 "workflowId": r["workflow_id"] or "",
+                "modelKey": r["model_key"] or "",
                 "rhTaskId": r["rh_task_id"],
                 "status": r["status"],
                 "costTime": r["cost_time"],
                 "consumeCoins": r["consume_coins"],
-                "consumeMoney": float(r["consume_money"]) if r["consume_money"] is not None else None,
-                "thirdPartyConsumeMoney": float(r["third_party_consume_money"]) if r["third_party_consume_money"] is not None else None,
+                "consumeMoney": float(r["consume_money"])
+                if r["consume_money"] is not None
+                else None,
+                "thirdPartyConsumeMoney": float(r["third_party_consume_money"])
+                if r["third_party_consume_money"] is not None
+                else None,
                 "results": r["results"] or [],
                 "errorMessage": r["error_message"],
                 "nodeInput": r["node_input"] or [],
                 "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
-                "completedAt": r["completed_at"].isoformat() if r["completed_at"] else None,
+                "completedAt": r["completed_at"].isoformat()
+                if r["completed_at"]
+                else None,
             }
             for r in rows
         ],

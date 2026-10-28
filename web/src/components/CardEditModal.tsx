@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { PROMPT_PROFILES } from '@/lib/model-utils';
 import { PALETTE, isVideoCover } from '@/lib/card-utils';
 import { compressImageToJpegFile } from '@/lib/image-compress';
 import type { Card, EditableField, NodeInfo } from '@/lib/types';
@@ -26,13 +27,7 @@ interface Props {
   onSaved: () => void;
 }
 
-function TagEditor({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
+function TagEditor({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   const [draft, setDraft] = useState('');
 
   const commit = () => {
@@ -93,6 +88,9 @@ function TagEditor({
 }
 
 const empty: Partial<Card> = {
+  category: 'image',
+  imageMode: '',
+  promptProfile: 'generic',
   cardType: 'webapp',
   webappId: '',
   workflowId: '',
@@ -126,7 +124,6 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
       setNodes([]);
     }
   }, [open, card]);
-
 
   const set = <K extends keyof Card>(key: K, value: Card[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -163,9 +160,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
     }
     setLoadingNodes(true);
     try {
-      const list = isWebapp
-        ? await api.proxy.getNodeInfo(id)
-        : await api.proxy.getWorkflowJson(id);
+      const list = isWebapp ? await api.proxy.getNodeInfo(id) : await api.proxy.getWorkflowJson(id);
       setNodes(list);
       if (list.length === 0) toast.warning('沒有可修改節點');
       else toast.success(`載入 ${list.length} 個節點`);
@@ -197,18 +192,14 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
   const setFieldType = (n: NodeInfo, fieldType: string) => {
     const key = fieldKey(n);
     const cur = form.editableFields || [];
-    const next = cur.map((e) =>
-      fieldKey(e) === key ? { ...e, fieldType } : e,
-    );
+    const next = cur.map((e) => (fieldKey(e) === key ? { ...e, fieldType } : e));
     set('editableFields', next);
   };
 
   const setDisplayName = (n: NodeInfo, displayName: string) => {
     const key = fieldKey(n);
     const cur = form.editableFields || [];
-    const next = cur.map((e) =>
-      fieldKey(e) === key ? { ...e, displayName } : e,
-    );
+    const next = cur.map((e) => (fieldKey(e) === key ? { ...e, displayName } : e));
     set('editableFields', next);
   };
 
@@ -248,6 +239,9 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
           tags: form.tags || [],
+          category: form.category,
+          imageMode: form.imageMode,
+          promptProfile: form.promptProfile,
           editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : undefined,
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
@@ -264,6 +258,9 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           coverUrl: form.coverUrl || '',
           color: form.color || PALETTE[0],
           tags: form.tags || [],
+          category: form.category,
+          imageMode: form.imageMode,
+          promptProfile: form.promptProfile,
           editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : 'default',
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
@@ -290,45 +287,93 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
         </DialogHeader>
         <form className="space-y-4" onSubmit={submit}>
           {/* 型別切換 */}
-          <div className="space-y-2">
-            <Label>卡片類型</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => set('cardType', 'webapp')}
-                disabled={isEdit}
-                className={cn(
-                  'rounded-md border p-3 text-left transition-colors',
-                  form.cardType === 'webapp'
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/40',
-                  isEdit && 'opacity-60 cursor-not-allowed',
-                )}
-              >
-                <div className="text-sm font-semibold">webapp</div>
-                <div className="text-xs text-muted-foreground">AI 應用（webappId）</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => set('cardType', 'workflow')}
-                disabled={isEdit}
-                className={cn(
-                  'rounded-md border p-3 text-left transition-colors',
-                  form.cardType === 'workflow'
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/40',
-                  isEdit && 'opacity-60 cursor-not-allowed',
-                )}
-              >
-                <div className="text-sm font-semibold">workflow</div>
-                <div className="text-xs text-muted-foreground">工作流 + 編輯白名單</div>
-              </button>
+          {form.cardType !== 'model' && (
+            <div className="space-y-2">
+              <Label>卡片類型</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => set('cardType', 'webapp')}
+                  disabled={isEdit}
+                  className={cn(
+                    'rounded-md border p-3 text-left transition-colors',
+                    form.cardType === 'webapp'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/40',
+                    isEdit && 'opacity-60 cursor-not-allowed',
+                  )}
+                >
+                  <div className="text-sm font-semibold">webapp</div>
+                  <div className="text-xs text-muted-foreground">AI 應用（webappId）</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set('cardType', 'workflow')}
+                  disabled={isEdit}
+                  className={cn(
+                    'rounded-md border p-3 text-left transition-colors',
+                    form.cardType === 'workflow'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/40',
+                    isEdit && 'opacity-60 cursor-not-allowed',
+                  )}
+                >
+                  <div className="text-sm font-semibold">workflow</div>
+                  <div className="text-xs text-muted-foreground">工作流 + 編輯白名單</div>
+                </button>
+              </div>
+              {isEdit && <p className="text-xs text-muted-foreground">建立後類型不可變更</p>}
             </div>
-            {isEdit && (
-              <p className="text-xs text-muted-foreground">建立後類型不可變更</p>
-            )}
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="category">分類</Label>
+              <select
+                id="category"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                disabled={form.cardType === 'model'}
+                value={form.category || 'image'}
+                onChange={(e) => {
+                  set('category', e.target.value as Card['category']);
+                  if (e.target.value !== 'image') set('imageMode', '');
+                }}
+              >
+                <option value="image">圖片</option>
+                <option value="video">影片</option>
+                <option value="audio">音源</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="image-mode">圖片模式</Label>
+              <select
+                id="image-mode"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                disabled={form.cardType === 'model' || form.category !== 'image'}
+                value={form.imageMode || ''}
+                onChange={(e) => set('imageMode', e.target.value as Card['imageMode'])}
+              >
+                <option value="">一般／未分類</option>
+                <option value="text-to-image">文生圖</option>
+                <option value="image-to-image">圖生圖</option>
+              </select>
+            </div>
           </div>
-
+          <div className="space-y-2">
+            <Label htmlFor="prompt-profile">AI 助手的模型規則</Label>
+            <select
+              id="prompt-profile"
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              disabled={form.cardType === 'model'}
+              value={form.promptProfile || 'generic'}
+              onChange={(e) => set('promptProfile', e.target.value as Card['promptProfile'])}
+            >
+              {PROMPT_PROFILES.map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="title">卡片名稱</Label>
             <Input
@@ -339,7 +384,11 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
             />
           </div>
 
-          {form.cardType === 'webapp' ? (
+          {form.cardType === 'model' ? (
+            <p className="rounded border p-3 text-sm text-muted-foreground">
+              標準模型：參數與圖片上限由模型目錄管理。
+            </p>
+          ) : form.cardType === 'webapp' ? (
             <div className="space-y-2">
               <Label htmlFor="webappId">webappId</Label>
               <div className="flex gap-2">
@@ -417,88 +466,86 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           )}
 
           {/* 編輯欄位（webapp / workflow 共用） */}
-          <div className="space-y-2">
-            <Label>使用者可編輯的欄位</Label>
-            {nodes.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-                點擊上方「載入節點」抓取目前可修改欄位
-                {form.cardType === 'webapp'
-                  ? '（webapp：未勾選則 user 端顯示全部欄位、用 RH 推斷類型）'
-                  : '（workflow：勾選哪些開放給 user）'}
-              </p>
-            ) : (
-              <div className="max-h-96 overflow-y-auto rounded-md border border-border">
-                {nodes.map((n) => {
-                  const key = fieldKey(n);
-                  const checked = editableSet.has(key);
-                  const defaultLabel = n.description || n.descriptionEn || n.fieldName;
-                  return (
-                    <div
-                      key={key}
-                      className="border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
-                    >
-                      <div className="flex items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleField(n)}
-                          className="mt-1 size-4 cursor-pointer"
-                          id={`ed-${key}`}
-                        />
-                        <label
-                          htmlFor={`ed-${key}`}
-                          className="flex-1 cursor-pointer text-sm"
-                        >
-                          <div className="font-medium">{defaultLabel}</div>
-                          <div className="font-mono text-xs text-muted-foreground">
-                            #{n.nodeId} · {n.fieldName}
-                          </div>
-                        </label>
-                        {checked ? (
-                          <select
-                            value={getFieldType(n)}
-                            onChange={(e) => setFieldType(n, e.target.value)}
-                            className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
-                            title="渲染類型（admin 指定）"
-                          >
-                            <option value="STRING">STRING</option>
-                            <option value="INT">INT</option>
-                            <option value="IMAGE">IMAGE</option>
-                            <option value="MASK">MASK 🎨</option>
-                            <option value="VIDEO">VIDEO</option>
-                            <option value="AUDIO">AUDIO</option>
-                            <option value="LIST">LIST</option>
-                          </select>
-                        ) : (
-                          <span className="self-center text-[10px] text-muted-foreground">
-                            {(n.fieldType || 'STRING').toUpperCase()}
-                          </span>
+          {form.cardType !== 'model' && (
+            <div className="space-y-2">
+              <Label>使用者可編輯的欄位</Label>
+              {nodes.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+                  點擊上方「載入節點」抓取目前可修改欄位
+                  {form.cardType === 'webapp'
+                    ? '（webapp：未勾選則 user 端顯示全部欄位、用 RH 推斷類型）'
+                    : '（workflow：勾選哪些開放給 user）'}
+                </p>
+              ) : (
+                <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+                  {nodes.map((n) => {
+                    const key = fieldKey(n);
+                    const checked = editableSet.has(key);
+                    const defaultLabel = n.description || n.descriptionEn || n.fieldName;
+                    return (
+                      <div
+                        key={key}
+                        className="border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/50"
+                      >
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleField(n)}
+                            className="mt-1 size-4 cursor-pointer"
+                            id={`ed-${key}`}
+                          />
+                          <label htmlFor={`ed-${key}`} className="flex-1 cursor-pointer text-sm">
+                            <div className="font-medium">{defaultLabel}</div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              #{n.nodeId} · {n.fieldName}
+                            </div>
+                          </label>
+                          {checked ? (
+                            <select
+                              value={getFieldType(n)}
+                              onChange={(e) => setFieldType(n, e.target.value)}
+                              className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
+                              title="渲染類型（admin 指定）"
+                            >
+                              <option value="STRING">STRING</option>
+                              <option value="INT">INT</option>
+                              <option value="IMAGE">IMAGE</option>
+                              <option value="MASK">MASK 🎨</option>
+                              <option value="VIDEO">VIDEO</option>
+                              <option value="AUDIO">AUDIO</option>
+                              <option value="LIST">LIST</option>
+                            </select>
+                          ) : (
+                            <span className="self-center text-[10px] text-muted-foreground">
+                              {(n.fieldType || 'STRING').toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        {checked && (
+                          <input
+                            type="text"
+                            value={getDisplayName(n)}
+                            onChange={(e) => setDisplayName(n, e.target.value)}
+                            placeholder={`使用者顯示名（留空＝用「${defaultLabel}」）`}
+                            className="mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs"
+                          />
                         )}
                       </div>
-                      {checked && (
-                        <input
-                          type="text"
-                          value={getDisplayName(n)}
-                          onChange={(e) => setDisplayName(n, e.target.value)}
-                          placeholder={`使用者顯示名（留空＝用「${defaultLabel}」）`}
-                          className="mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              <b>類型</b>決定 user 表單渲染方式（圖片上傳 / 文字框 / 數字 / 下拉…）；
-              自動推斷對 IMAGE/VIDEO/AUDIO/MASK 不可靠，請手動選擇。
-              <br />
-              {form.cardType === 'webapp'
-                ? '未勾選任何欄位 = 用 RH 預設行為（全部顯示 + RH 推斷類型）；勾選後變白名單。'
-                : '未勾選的欄位會用 workflow 預設值送出（適合反向提示詞等固定設定）。'}
-            </p>
-          </div>
-
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                <b>類型</b>決定 user 表單渲染方式（圖片上傳 / 文字框 / 數字 / 下拉…）； 自動推斷對
+                IMAGE/VIDEO/AUDIO/MASK 不可靠，請手動選擇。
+                <br />
+                {form.cardType === 'webapp'
+                  ? '未勾選任何欄位 = 用 RH 預設行為（全部顯示 + RH 推斷類型）；勾選後變白名單。'
+                  : '未勾選的欄位會用 workflow 預設值送出（適合反向提示詞等固定設定）。'}
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="maxDuration">最長執行時長（秒）</Label>
             <Input
@@ -512,7 +559,8 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
               placeholder="0 = 用全域預設（10 分鐘）"
             />
             <p className="text-xs text-muted-foreground">
-              0 = 全域預設 600 秒；建議 60–3600 秒。RH 平台單任務上限 60 分鐘，超過此值將標記為 TIMEOUT。
+              0 = 全域預設 600 秒；建議 60–3600 秒。RH 平台單任務上限 60 分鐘，超過此值將標記為
+              TIMEOUT。
             </p>
           </div>
 
@@ -520,7 +568,8 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
             <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
               <div className="text-sm font-medium text-foreground">🎨 遮罩編輯器自動觸發</div>
               <div className="mt-1">
-                把任一欄位的<b className="text-foreground">類型設為 MASK</b>，使用者端就會自動開啟遮罩編輯器：
+                把任一欄位的<b className="text-foreground">類型設為 MASK</b>
+                ，使用者端就會自動開啟遮罩編輯器：
                 <ul className="ml-4 mt-1 list-disc space-y-0.5">
                   <li>該 MASK 欄位對 user 隱藏</li>
                   <li>另一個 IMAGE 欄位視為來源圖（user 上傳）</li>
@@ -544,19 +593,14 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
 
           <div className="space-y-2">
             <Label>標籤（協助使用者搜尋）</Label>
-            <TagEditor
-              value={form.tags || []}
-              onChange={(next) => set('tags', next)}
-            />
+            <TagEditor value={form.tags || []} onChange={(next) => set('tags', next)} />
             <p className="text-xs text-muted-foreground">
               Enter 或逗號加入；最多 10 個，每個 30 字內。例：「放大」「人像」「修復」
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="llmNote">
-              🤖 AI 助手說明（不對使用者顯示）
-            </Label>
+            <Label htmlFor="llmNote">🤖 AI 助手說明（不對使用者顯示）</Label>
             <Textarea
               id="llmNote"
               rows={6}
@@ -646,7 +690,8 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                   </Button>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  圖片 PNG/JPG/WEBP/GIF（≤ 5 MB，自動壓 JPG）；影片 MP4/WEBM/MOV（≤ 10 MB，原檔上傳）
+                  圖片 PNG/JPG/WEBP/GIF（≤ 5 MB，自動壓 JPG）；影片 MP4/WEBM/MOV（≤ 10
+                  MB，原檔上傳）
                 </p>
               </div>
             </div>

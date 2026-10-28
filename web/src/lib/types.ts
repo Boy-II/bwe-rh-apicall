@@ -2,7 +2,20 @@
 
 export type UserStatus = 'pending' | 'approved' | 'rejected';
 
+export interface AccessSettings {
+  divisions: string[];
+  allowedDivisions: string[];
+  lastSync: string | null;
+}
+
 export interface UserSummary {
+  name: string;
+  email: string;
+  division: string;
+  department: string;
+  unit: string;
+  authSource: string;
+  sourceStatus: string;
   id: string;
   username: string;
   status: UserStatus;
@@ -12,6 +25,9 @@ export interface UserSummary {
 
 export interface SessionUser {
   username: string;
+  name?: string;
+  email?: string;
+  division?: string;
   isAdmin: boolean;
 }
 
@@ -19,14 +35,31 @@ export interface LoginResponse {
   token: string;
   username: string;
   adminToken?: string;
+  name?: string;
+  email?: string;
+  division?: string;
 }
 
 export interface VerifyResponse {
   valid: boolean;
   username?: string;
+  name?: string;
+  email?: string;
+  division?: string;
 }
 
-export type CardType = 'webapp' | 'workflow';
+export type CardType = 'webapp' | 'workflow' | 'model';
+export type Category = 'image' | 'video' | 'audio';
+export type ImageMode = '' | 'text-to-image' | 'image-to-image';
+export type PromptProfile =
+  | 'generic'
+  | 'gemini-pro'
+  | 'gemini-flash'
+  | 'midjourney-v7'
+  | 'gpt-image-2'
+  | 'seedream'
+  | 'krea2'
+  | 'moss-image';
 export type InstanceType = 'default' | 'plus'; // default=24G, plus=4090 48G
 
 export interface EditableField {
@@ -39,6 +72,10 @@ export interface EditableField {
 }
 
 export interface Card {
+  category?: Category;
+  imageMode?: ImageMode;
+  modelKey?: string;
+  promptProfile?: PromptProfile;
   id: string;
   cardType: CardType;
   webappId: string;
@@ -72,7 +109,7 @@ export type NodeFieldType =
 export interface NodeInfo {
   nodeId: string;
   fieldName: string;
-  fieldValue?: string | number | boolean | null;
+  fieldValue?: string | number | boolean | string[] | null;
   fieldType?: NodeFieldType;
   description?: string;
   descriptionEn?: string;
@@ -125,6 +162,7 @@ export interface TaskHistoryResult {
 }
 
 export interface TaskHistoryItem {
+  modelKey?: string;
   id: string;
   cardId: string | null;
   cardTitle: string;
@@ -211,4 +249,29 @@ export interface ConfigStatus {
   baseUrl: string;
   pollingInterval: number;
   maxPollingRetries: number;
+}
+
+export type ModelValue = string | number | boolean | string[];
+export interface ModelParam {
+  fieldKey: string;
+  type: string;
+  required: boolean;
+  defaultValue?: ModelValue;
+  options?: { value: string; description?: string }[];
+  min?: number;
+  max?: number;
+  step?: number;
+  maxLength?: number;
+  multipleInputs?: boolean;
+  maxInputNum?: number;
+  accept?: string;
+  maxSize?: number;
+}
+export interface ModelSchema {
+  key: string;
+  title: string;
+  profile: PromptProfile;
+  mode: ImageMode;
+  endpoint: string;
+  params: ModelParam[];
 }

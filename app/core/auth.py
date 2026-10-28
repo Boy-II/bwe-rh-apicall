@@ -1,5 +1,6 @@
 """驗證機制：admin token（Redis）+ user JWT（PyJWT）。"""
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -57,9 +58,10 @@ async def require_admin(request: Request) -> str:
 # ===== User JWT =====
 
 
-def create_user_token(user_id: str) -> str:
+def create_user_token(user_id: str, session_version: int = 0) -> str:
     payload = {
         "user_id": user_id,
+        "session_version": session_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=_JWT_EXPIRY_DAYS),
     }
     return jwt.encode(payload, config.get_jwt_secret(), algorithm=_JWT_ALGORITHM)
@@ -67,7 +69,9 @@ def create_user_token(user_id: str) -> str:
 
 def decode_user_token(token: str) -> str:
     try:
-        payload = jwt.decode(token, config.get_jwt_secret(), algorithms=[_JWT_ALGORITHM])
+        payload = jwt.decode(
+            token, config.get_jwt_secret(), algorithms=[_JWT_ALGORITHM]
+        )
         return payload["user_id"]
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token 已過期，請重新登入")
@@ -75,36 +79,68 @@ def decode_user_token(token: str) -> str:
         raise HTTPException(status_code=401, detail="需要登入")
 
 
-async def require_user(request: Request) -> str:
-    """驗證 X-User-Token，回傳 user_id（admin 走捷徑時為 ADMIN_USER_ID）。"""
+async def allowed_divisions() -> list[str]:
+    row = await db.fetch_one("SELECT value FROM settings WHERE key='allowed_divisions'")
+    if row is None:
+        return ["健康事業處"]
+    value = row["value"]
+    # Production settings.value is TEXT (pre-existing table), so JSON arrives as a string.
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return (
+        value
+        if isinstance(value, list) and all(isinstance(v, str) for v in value)
+        else []
+    )
+
+
+async def user_accessible(user: dict | None) -> bool:
+    # Legacy local accounts are not tied to a division; only admin approval applies.
+    if user and user.get("auth_source") == "local":
+        return user.get("status") == "approved"
+    return bool(
+        user
+        and user.get("auth_source") == "bwhr"
+        and user.get("source_status") == "ACTIVE"
+        and user.get("status") == "approved"
+        and user.get("division") in await allowed_divisions()
+    )
+
+
+async def authenticated_user(request: Request) -> dict:
     token = request.headers.get("X-User-Token", "")
     if not token:
         raise HTTPException(status_code=401, detail="需要登入")
     user_id = decode_user_token(token)
     if user_id == ADMIN_USER_ID:
-        return user_id
-    user = await db.fetch_one(
-        "SELECT id, status FROM users WHERE id = $1", user_id
-    )
-    if not user or user["status"] != "approved":
-        raise HTTPException(status_code=401, detail="帳號狀態異常，請重新登入")
-    return user_id
+        return {
+            "id": user_id,
+            "username": "admin",
+            "name": "管理員",
+            "email": "",
+            "division": "",
+        }
+    user = await db.fetch_one("SELECT * FROM users WHERE id=$1", user_id)
+    payload = jwt.decode(token, config.get_jwt_secret(), algorithms=[_JWT_ALGORITHM])
+    if (
+        not await user_accessible(user)
+        or payload.get("session_version", -1) != user["session_version"]
+    ):
+        raise HTTPException(
+            status_code=401, detail="帳號權限已變更，請重新登入或聯絡管理員"
+        )
+    return user
+
+
+async def require_user(request: Request) -> str:
+    return (await authenticated_user(request))["id"]
 
 
 async def optional_user(request: Request) -> Optional[str]:
-    """軟驗證：有 token 且有效則回 user_id，否則 None（不丟錯）。"""
-    token = request.headers.get("X-User-Token", "")
-    if not token:
-        return None
     try:
-        user_id = decode_user_token(token)
+        return await require_user(request)
     except HTTPException:
         return None
-    if user_id == ADMIN_USER_ID:
-        return user_id
-    user = await db.fetch_one(
-        "SELECT id, status FROM users WHERE id = $1", user_id
-    )
-    if not user or user["status"] != "approved":
-        return None
-    return user_id

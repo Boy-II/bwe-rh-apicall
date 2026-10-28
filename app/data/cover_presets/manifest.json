@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "cards": {
+    "model:gemini-flash-image": "/covers/c3b816d0b500b6a0e59c82ae.webp",
+    "model:gemini-flash-text": "/covers/fdfc2792fb025c91f063f1aa.webp",
+    "model:gemini-pro-image": "/covers/1623caa897de11ada4671562.jpg",
+    "model:gemini-pro-text": "/covers/3e74d3813726fee8f5a75b69.jpg",
+    "model:gpt-image-2-image": "/covers/2e487e5403a4e4d795ff157e.jpg",
+    "model:gpt-image-2-text": "/covers/14cf67bfbda717b1719abb08.jpg",
+    "model:midjourney-v7-image": "/covers/e0fb6a8750f5a6c3d851a746.jpg",
+    "model:midjourney-v7-text": "/covers/922cbb4e9be91cbd960f59bd.jpg",
+    "model:seedream-image": "/covers/4dfc88fc8f3761e1c508dd84.png",
+    "model:seedream-text": "/covers/52bc40809ec3d41adeee7083.png"
+  }
+}
