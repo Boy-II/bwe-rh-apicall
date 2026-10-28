@@ -1,0 +1,68 @@
+name: Test & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Backend tests (with PostgreSQL integration)
+        run: |
+          # The runner image ships PostgreSQL binaries; integration tests start their own instance.
+          export TEST_PG_BIN=$(dirname "$(ls /usr/lib/postgresql/*/bin/initdb | sort -V | tail -1)")
+          python -m unittest discover -s tests -t . -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Frontend build & tests
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    # One deploy at a time; a newer push waits instead of racing the VPS build.
+    concurrency:
+      group: deploy-rhapi
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to VPS
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key is restricted server-side to /usr/local/bin/deploy-rhapi.sh;
+          # the only argument it accepts is the commit to deploy.
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "ubuntu@$VPS_HOST" "$GITHUB_SHA"
