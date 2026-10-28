@@ -166,7 +166,7 @@ export function AiConfigModal({ open, onClose }: Props) {
               <Label htmlFor="systemPrompt">
                 System Prompt
                 <span className="ml-1 text-xs text-muted-foreground">
-                  （全域基礎 prompt，每次聊天會自動加上目前卡片的 context）
+                  （管理員補充規則；平台與模型規則會另外套用）
                 </span>
               </Label>
               <Textarea
@@ -174,10 +174,11 @@ export function AiConfigModal({ open, onClose }: Props) {
                 rows={6}
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="例：你是 BWE AI 應用平台的助手，協助使用者選擇 AI 應用並撰寫提示詞，回覆請使用繁體中文…"
+                placeholder="例：品牌配色以深綠色為主；修改提示詞時保留指定商品名稱…"
               />
               <p className="text-xs text-muted-foreground">
-                留空則使用內建預設 prompt。當建議提示詞時請保留 ```prompt 區塊格式以利使用者套用。
+                留空使用內建提示詞助手。此處可補充品牌語氣或業務要求，不會取代模型限制；提示詞使用
+                ```prompt 區塊，MOSS 定位版面使用 ```moss-layout。
               </p>
             </div>
 
@@ -194,7 +195,8 @@ export function AiConfigModal({ open, onClose }: Props) {
                 <option value="TWD">TWD (NT$)</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                用戶管理頁顯示金額時的幣別符號。實際金額由 RunningHub 任務回傳的 consumeMoney + thirdPartyConsumeMoney 加總得到。
+                用戶管理頁顯示金額時的幣別符號。實際金額由 RunningHub 任務回傳的 consumeMoney +
+                thirdPartyConsumeMoney 加總得到。
               </p>
             </div>
 

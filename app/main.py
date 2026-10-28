@@ -5,7 +5,6 @@ import logging
 import mimetypes
 import secrets
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -30,10 +29,21 @@ from app.core import config, db
 from app.core import redis_client
 from app.migrations.runner import apply_migrations
 from app.migrations.seed_from_config import run_seed
-from app.routers import admin_ai, admin_rh, auth, cards, health, proxy, tasks, users
+from app.routers import (
+    admin_ai,
+    admin_rh,
+    auth,
+    cards,
+    health,
+    proxy,
+    tasks,
+    users,
+    models,
+)
+from app.services.model_catalog import seed_model_cards
 from app.services import runninghub
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
+from app.services.cover_presets import restore_files, apply_cover_presets
+from app.core.paths import ROOT_DIR, COVERS_DIR
 
 
 @asynccontextmanager
@@ -46,6 +56,8 @@ async def lifespan(app: FastAPI):
     # === Migrations + 一次性 seed ===
     await apply_migrations()
     await run_seed()
+    await seed_model_cards()
+    await apply_cover_presets()
 
     # === 載入 DB settings 到 in-memory 快取 ===
     # JSONB 已被 codec decode 成 Python 物件
@@ -97,12 +109,12 @@ app.include_router(admin_ai.router)
 app.include_router(admin_rh.router)
 app.include_router(tasks.router)
 app.include_router(proxy.router)
+app.include_router(models.router)
 
 
 # ===== 靜態檔案 =====
 # 卡片預覽圖（持久化）
-COVERS_DIR = Path("/card/covers") if Path("/card").exists() else (ROOT_DIR / "covers")
-COVERS_DIR.mkdir(parents=True, exist_ok=True)
+restore_files()
 app.mount("/covers", StaticFiles(directory=COVERS_DIR), name="covers")
 
 WEB_DIST = ROOT_DIR / "web" / "dist"

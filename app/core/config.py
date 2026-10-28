@@ -10,6 +10,9 @@ load_dotenv(override=False)
 # ===== env-only：runtime 不可改 =====
 RUNNINGHUB_API_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 RUNNINGHUB_BASE_URL = os.environ.get("RUNNINGHUB_BASE_URL", "https://www.runninghub.ai")
+RUNNINGHUB_MODEL_BASE_URL = os.environ.get(
+    "RUNNINGHUB_MODEL_BASE_URL", "https://www.runninghub.ai/openapi/v2"
+).rstrip("/")
 RH_TIMEOUT_READ = float(os.environ.get("RH_TIMEOUT_READ", "45"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")

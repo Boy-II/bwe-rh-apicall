@@ -60,11 +60,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
     // workflow 或有 editableFields 的 webapp → 套白名單 + admin fieldType/displayName 覆寫
     const overrides = new Map(
       editableFields.map(
-        (e) =>
-          [
-            fieldKey(e),
-            { fieldType: e.fieldType, displayName: e.displayName },
-          ] as const,
+        (e) => [fieldKey(e), { fieldType: e.fieldType, displayName: e.displayName }] as const,
       ),
     );
     const allowed = new Set(editableFields.map(fieldKey));
@@ -155,12 +151,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
         );
       } else {
         const finalNodes = applyEdits(allNodes, drafts);
-        submitRes = await api.proxy.submitTask(
-          card.webappId,
-          finalNodes,
-          card.id,
-          card.title,
-        );
+        submitRes = await api.proxy.submitTask(card.webappId, finalNodes, card.id, card.title);
       }
 
       const nodeError = findPromptNodeError(submitRes);
@@ -293,14 +284,14 @@ export function TaskView({ card, onBack, prefill }: Props) {
       </main>
       <ChatSidebar
         context={{
+          cardId: card.id,
+          promptProfile: card.promptProfile,
           cardTitle: card.title,
           cardLlmNote: card.llmNote,
-          nodeInfoList: visibleNodes,
+          nodeInfoList: applyEdits(visibleNodes, drafts),
         }}
         onApplyPrompt={(text) => {
-          const idx = visibleNodes.findIndex(
-            (n) => (n.fieldType || '').toUpperCase() === 'STRING',
-          );
+          const idx = visibleNodes.findIndex((n) => (n.fieldType || '').toUpperCase() === 'STRING');
           if (idx === -1) return;
           const next = drafts.slice();
           next[idx] = { ...next[idx], fieldValue: text };
@@ -367,7 +358,12 @@ function ResultCard({ output }: { output: NormalizedOutput }) {
       {kind === 'audio' && <audio src={output.fileUrl} controls className="w-full p-2" />}
       {kind === 'file' && (
         <div className="p-4 text-sm">
-          <a href={output.fileUrl} target="_blank" rel="noreferrer" className="text-primary underline">
+          <a
+            href={output.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline"
+          >
             {output.fileUrl}
           </a>
         </div>

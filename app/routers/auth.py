@@ -1,63 +1,81 @@
 """使用者 / 管理員認證端點。"""
 
 import secrets
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from app.core import auth, config, db, security
 from app.schemas import AdminLoginRequest, UserLoginRequest, UserRegisterRequest
 
 router = APIRouter()
 
+_DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEe.4N3F/G4DqxuP0D4VTsS00.6SwD7xS8K"
+
 
 # ===== 使用者 =====
 
 
+def _profile(user: dict) -> dict:
+    return {
+        "username": user["username"],
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
+        "division": user.get("division", ""),
+    }
+
+
 @router.post("/api/auth/register")
 async def user_register(req: UserRegisterRequest):
-    username = req.username.strip().lower()
-    existing = await db.fetch_one("SELECT id FROM users WHERE username = $1", username)
-    if existing:
-        raise HTTPException(status_code=409, detail="帳號已存在")
-
-    user_id = secrets.token_hex(8)
-    await db.execute(
-        """
-        INSERT INTO users (id, username, password_hash, status, role, created_at, updated_at)
-        VALUES ($1, $2, $3, 'pending', 'user', $4, $4)
-        """,
-        user_id,
-        username,
-        security.hash_password(req.password),
-        datetime.now(timezone.utc),
+    raise HTTPException(
+        status_code=403, detail="請使用 BWHR 員工編號與密碼登入；首次設定密碼請至 BWHR"
     )
-    return {"message": "帳號申請成功，請等待管理員審核"}
 
 
 @router.post("/api/auth/login")
-async def user_login(req: UserLoginRequest):
-    """user 登入；admin/{ADMIN_PASSWORD} 同時取得 user JWT + adminToken。"""
-    username = req.username.strip().lower()
+async def user_login(req: UserLoginRequest, request: Request):
+    from app.core.rate_limit import check_rate_limit
+    import asyncio
+    import hashlib
 
-    if username == "admin" and config.ADMIN_PASSWORD and req.password == config.ADMIN_PASSWORD:
-        token = auth.create_user_token(auth.ADMIN_USER_ID)
-        admin_token = await auth.issue_admin_token()
-        return {"token": token, "username": "admin", "adminToken": admin_token}
-
-    user = await db.fetch_one(
-        "SELECT id, username, password_hash, status FROM users WHERE username = $1",
-        username,
+    username = req.username.strip()
+    # Hash identifiers so rate-limit keys do not expose employee IDs.
+    identifier = hashlib.sha256(username.encode()).hexdigest()
+    await check_rate_limit(identifier, "login-account", 10, 900)
+    await check_rate_limit(
+        request.client.host if request.client else "unknown", "login-ip", 200, 900
     )
-    if not user or not security.verify_password(req.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
-    if user["status"] == "pending":
-        raise HTTPException(status_code=403, detail="帳號尚待管理員審核")
-    if user["status"] == "rejected":
-        raise HTTPException(status_code=403, detail="帳號申請已被拒絕")
-
-    token = auth.create_user_token(user["id"])
-    return {"token": token, "username": user["username"]}
+    if (
+        username == "admin"
+        and config.ADMIN_PASSWORD
+        and secrets.compare_digest(
+            req.password.encode(), config.ADMIN_PASSWORD.encode()
+        )
+    ):
+        return {
+            "token": auth.create_user_token(auth.ADMIN_USER_ID),
+            "username": "admin",
+            "name": "管理員",
+            "email": "",
+            "division": "",
+            "adminToken": await auth.issue_admin_token(),
+        }
+    user = await db.fetch_one(
+        "SELECT * FROM users WHERE username=$1 AND auth_source='bwhr'", username
+    )
+    # A real fixed-cost dummy bcrypt check prevents a fast missing-account path.
+    hashed = user["password_hash"] if user and user["password_hash"] else _DUMMY_HASH
+    valid = await asyncio.to_thread(security.verify_password, req.password, hashed)
+    if not user or not user["password_hash"] or not valid:
+        raise HTTPException(
+            status_code=401, detail="員工編號或密碼錯誤；尚未設定密碼請至 BWHR"
+        )
+    if not await auth.user_accessible(user):
+        raise HTTPException(
+            status_code=403, detail="帳號停用、遭拒絕或所屬區處尚未開放，請聯絡管理員"
+        )
+    return {
+        "token": auth.create_user_token(user["id"], user["session_version"]),
+        **_profile(user),
+    }
 
 
 @router.post("/api/auth/logout")
@@ -68,21 +86,11 @@ async def user_logout():
 
 @router.get("/api/auth/verify")
 async def user_verify(request: Request):
-    token = request.headers.get("X-User-Token", "")
-    if not token:
-        return {"valid": False}
     try:
-        user_id = auth.decode_user_token(token)
+        user = await auth.authenticated_user(request)
     except HTTPException:
         return {"valid": False}
-    if user_id == auth.ADMIN_USER_ID:
-        return {"valid": True, "username": "admin"}
-    user = await db.fetch_one(
-        "SELECT username, status FROM users WHERE id = $1", user_id
-    )
-    if not user or user["status"] != "approved":
-        return {"valid": False}
-    return {"valid": True, "username": user["username"]}
+    return {"valid": True, **_profile(user)}
 
 
 # ===== 管理員 =====

@@ -116,3 +116,47 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob>
     );
   });
 }
+
+/** Model input only: preserve PNG/WebP alpha and reject unreadable/oversize images. */
+export async function prepareModelImage(
+  file: File,
+  maxBytes: number,
+): Promise<{ file: File; width: number; height: number }> {
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type))
+    throw new Error('請選擇 PNG、JPEG 或 WebP 圖片');
+  if (file.size > 50 * 1024 * 1024) throw new Error('原圖超過 50 MB，請先縮小圖片');
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error('無法讀取圖片，請確認圖片檔案完整');
+  }
+  try {
+    if (bitmap.width * bitmap.height > 40_000_000)
+      throw new Error('圖片像素過大，請先縮小至 4000 萬像素以下');
+    const { w, h } = fitWithin(bitmap.width, bitmap.height, 1024);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('無法處理圖片');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const mime = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('圖片縮圖失敗'))), mime, 0.9),
+    );
+    if (blob.size > maxBytes)
+      throw new Error(`縮圖後仍超過 ${maxBytes / 1024 / 1024} MB，請使用較小圖片`);
+    return {
+      file: new File(
+        [blob],
+        file.name.replace(/\.[^.]+$/, '') + (mime === 'image/png' ? '.png' : '.jpg'),
+        { type: mime },
+      ),
+      width: w,
+      height: h,
+    };
+  } finally {
+    bitmap.close();
+  }
+}

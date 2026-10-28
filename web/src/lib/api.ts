@@ -1,5 +1,8 @@
 import type {
   AccountStatusData,
+  AccessSettings,
+  ModelSchema,
+  ModelValue,
   AiConfigResponse,
   AiConfigSavePayload,
   AppListResponse,
@@ -69,7 +72,10 @@ async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
     const msg =
       res.status === 502
         ? '網路不穩定，稍後再試'
-        : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
+        : (data &&
+            typeof data === 'object' &&
+            'detail' in data &&
+            (data as { detail: string }).detail) ||
           `HTTP ${res.status}`;
     throw new ApiError(String(msg), res.status);
   }
@@ -114,21 +120,41 @@ export const cards = {
     card: Partial<
       Pick<
         Card,
-        'webappId' | 'workflowId' | 'icon' | 'color' | 'editableFields' |
-        'instanceType' | 'cardType' | 'maxDurationSeconds' | 'llmNote' | 'tags' | 'enableMaskEditor'
+        | 'webappId'
+        | 'workflowId'
+        | 'icon'
+        | 'color'
+        | 'editableFields'
+        | 'instanceType'
+        | 'cardType'
+        | 'maxDurationSeconds'
+        | 'llmNote'
+        | 'tags'
+        | 'enableMaskEditor'
+        | 'category'
+        | 'imageMode'
+        | 'promptProfile'
       >
     > &
       Pick<Card, 'title' | 'description' | 'coverUrl'>,
-  ) =>
-    request<Card>('/api/admin/cards', { method: 'POST', body: json(card), admin: true }),
+  ) => request<Card>('/api/admin/cards', { method: 'POST', body: json(card), admin: true }),
   update: (
     id: string,
     card: Pick<Card, 'title' | 'description' | 'coverUrl'> &
       Partial<
         Pick<
           Card,
-          'icon' | 'color' | 'editableFields' | 'instanceType' | 'maxDurationSeconds' |
-          'llmNote' | 'tags' | 'enableMaskEditor'
+          | 'icon'
+          | 'color'
+          | 'editableFields'
+          | 'instanceType'
+          | 'maxDurationSeconds'
+          | 'llmNote'
+          | 'tags'
+          | 'enableMaskEditor'
+          | 'category'
+          | 'imageMode'
+          | 'promptProfile'
         >
       >,
   ) =>
@@ -157,12 +183,20 @@ export const cards = {
     });
     const text = await res.text();
     let data: unknown;
-    try { data = JSON.parse(text); } catch { data = text; }
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
     if (!res.ok) {
       const msg =
         res.status === 502
           ? '網路不穩定，稍後再試'
-          : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) || `HTTP ${res.status}`;
+          : (data &&
+              typeof data === 'object' &&
+              'detail' in data &&
+              (data as { detail: string }).detail) ||
+            `HTTP ${res.status}`;
       throw new ApiError(String(msg), res.status);
     }
     return data as { coverUrl: string };
@@ -171,6 +205,13 @@ export const cards = {
 
 // --- Users (admin) ---
 export const users = {
+  access: () => request<AccessSettings>('/api/admin/access', { admin: true }),
+  saveAccess: (allowedDivisions: string[]) =>
+    request<{ success: boolean }>('/api/admin/access', {
+      method: 'PUT',
+      admin: true,
+      body: json({ allowedDivisions }),
+    }),
   list: async (): Promise<UserSummary[]> => {
     const res = await request<{ users: UserSummary[] }>('/api/admin/users', { admin: true });
     return res.users || [];
@@ -218,13 +259,18 @@ export const adminAi = {
 // --- Admin RunningHub: balance + app browser ---
 export const adminRh = {
   accountStatus: async (): Promise<AccountStatusData> => {
-    const env = await request<RhEnvelope<AccountStatusData>>(
-      '/api/admin/account-status',
-      { method: 'POST', admin: true },
-    );
+    const env = await request<RhEnvelope<AccountStatusData>>('/api/admin/account-status', {
+      method: 'POST',
+      admin: true,
+    });
     return unwrapRh(env);
   },
-  appList: async (sort: AppSort, page: number, size: number, days = 7): Promise<AppListResponse> => {
+  appList: async (
+    sort: AppSort,
+    page: number,
+    size: number,
+    days = 7,
+  ): Promise<AppListResponse> => {
     const env = await request<RhEnvelope<AppListResponse>>('/api/admin/aiapp-list', {
       method: 'POST',
       body: json({ sort, page, size, days }),
@@ -254,7 +300,31 @@ export const tasks = {
 };
 
 // --- RunningHub proxy ---
+export const models = {
+  schema: (key: string) =>
+    request<ModelSchema>(`/api/models/${encodeURIComponent(key)}`, { user: true }),
+  submit: (cardId: string, payload: Record<string, ModelValue>) =>
+    request<TaskSubmitData>('/api/models/submit', {
+      method: 'POST',
+      user: true,
+      body: json({ cardId, payload }),
+    }),
+  upload: (cardId: string, fieldKey: string, file: File) => {
+    const fd = new FormData();
+    fd.append('cardId', cardId);
+    fd.append('fieldKey', fieldKey);
+    fd.append('file', file);
+    return request<{ url: string }>('/api/models/upload', { method: 'POST', user: true, body: fd });
+  },
+};
+
 export const proxy = {
+  compileMoss: (draft: object) =>
+    request<{ prompt: string; width: number; height: number }>('/api/proxy/compile-moss-layout', {
+      method: 'POST',
+      user: true,
+      body: json({ draft }),
+    }),
   getNodeInfo: async (webappId: string): Promise<NodeInfo[]> => {
     const env = await request<RhEnvelope<NodeInfo[] | { nodeInfoList?: NodeInfo[] }>>(
       '/api/proxy/getNodeInfo',
@@ -302,10 +372,11 @@ export const proxy = {
     return unwrapRh(env);
   },
   cancelTask: async (taskId: string): Promise<{ code: number; msg?: string }> => {
-    const env = await request<RhEnvelope<unknown> & { msg?: string }>(
-      '/api/proxy/cancelTask',
-      { method: 'POST', body: json({ taskId }), user: true },
-    );
+    const env = await request<RhEnvelope<unknown> & { msg?: string }>('/api/proxy/cancelTask', {
+      method: 'POST',
+      body: json({ taskId }),
+      user: true,
+    });
     if (env.code !== 0) {
       throw new ApiError(env.msg || `取消失敗（code=${env.code}）`, 400);
     }
@@ -314,10 +385,9 @@ export const proxy = {
   queryTaskOutputs: async (taskId: string): Promise<TaskQueryData> => {
     // RH /openapi/v2/query 回應為 flat shape（{taskId, status, results, ...}）
     // 不像 submit 帶 {code, msg, data} 包裝；只在出現 code 欄位且非 0 時當作錯誤
-    const resp = await request<TaskQueryData & { code?: number; msg?: string; data?: TaskQueryData }>(
-      '/api/proxy/queryTaskOutputs',
-      { method: 'POST', body: json({ taskId }), user: true },
-    );
+    const resp = await request<
+      TaskQueryData & { code?: number; msg?: string; data?: TaskQueryData }
+    >('/api/proxy/queryTaskOutputs', { method: 'POST', body: json({ taskId }), user: true });
     if (typeof resp.code === 'number' && resp.code !== 0) {
       throw new ApiError(resp.msg || `上游服務錯誤（code=${resp.code}）`, 400);
     }
@@ -348,7 +418,10 @@ export const proxy = {
       const msg =
         res.status === 502
           ? '網路不穩定，稍後再試'
-          : (data && typeof data === 'object' && 'detail' in data && (data as { detail: string }).detail) ||
+          : (data &&
+              typeof data === 'object' &&
+              'detail' in data &&
+              (data as { detail: string }).detail) ||
             `HTTP ${res.status}`;
       throw new ApiError(String(msg), res.status);
     }
@@ -367,6 +440,6 @@ export const proxy = {
   configStatus: () => request<ConfigStatus>('/api/config/status'),
 };
 
-export const api = { auth, cards, users, adminAi, adminRh, tasks, proxy };
+export const api = { auth, cards, users, adminAi, adminRh, tasks, proxy, models };
 export { ApiError };
 export default api;

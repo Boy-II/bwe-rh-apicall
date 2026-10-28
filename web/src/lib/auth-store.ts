@@ -37,7 +37,13 @@ export const useAuth = create<AuthState>()(
           setUserToken(res.token);
           if (res.adminToken) setAdminToken(res.adminToken);
           set({
-            user: { username: res.username, isAdmin: !!res.adminToken },
+            user: {
+              username: res.username,
+              name: res.name,
+              email: res.email,
+              division: res.division,
+              isAdmin: !!res.adminToken,
+            },
             userToken: res.token,
             adminToken: res.adminToken ?? null,
             isLoading: false,
@@ -99,7 +105,13 @@ export const useAuth = create<AuthState>()(
           }
 
           set({
-            user: { username: verify.username || user?.username || '', isAdmin: stillAdmin },
+            user: {
+              username: verify.username || user?.username || '',
+              name: verify.name,
+              email: verify.email,
+              division: verify.division,
+              isAdmin: stillAdmin,
+            },
           });
         } catch {
           setUserToken(null);

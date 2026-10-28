@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
-import type { UserSummary, UserUsage } from '@/lib/types';
+import type { UserSummary, UserUsage, AccessSettings } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -77,23 +77,21 @@ const STATUS_COLOR: Record<UserSummary['status'], string> = {
 export function UserManageModal({ open, onClose }: Props) {
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [usage, setUsage] = useState<Record<string, UserUsage>>({});
+  const [access, setAccess] = useState<AccessSettings>({
+    divisions: [],
+    allowedDivisions: [],
+    lastSync: null,
+  });
+  const [savingAccess, setSavingAccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const reload = async () => {
     setLoading(true);
     try {
-      const list = await api.users.list();
+      const [list, accessSettings] = await Promise.all([api.users.list(), api.users.access()]);
+      setAccess(accessSettings);
       setUsers(list);
-      // 並發抓所有 approved 用戶的本月用量
-      const approved = list.filter((u) => u.status === 'approved');
-      const results = await Promise.allSettled(
-        approved.map(async (u) => [u.id, await api.tasks.userUsage(u.id)] as const),
-      );
-      const next: Record<string, UserUsage> = {};
-      for (const r of results) {
-        if (r.status === 'fulfilled') next[r.value[0]] = r.value[1];
-      }
-      setUsage(next);
+      setUsage({});
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -126,10 +124,17 @@ export function UserManageModal({ open, onClose }: Props) {
   };
 
   const remove = async (u: UserSummary) => {
-    if (!confirm(`確定刪除用戶「${u.username}」？`)) return;
+    if (
+      !confirm(
+        u.authSource === 'bwhr'
+          ? `確定停用「${u.username}」？同步後也會保留此拒絕設定。`
+          : `確定刪除用戶「${u.username}」？`,
+      )
+    )
+      return;
     try {
       await api.users.remove(u.id);
-      toast.success('已刪除');
+      toast.success(u.authSource === 'bwhr' ? '已停用' : '已刪除');
       reload();
     } catch (e) {
       toast.error((e as Error).message);
@@ -152,9 +157,52 @@ export function UserManageModal({ open, onClose }: Props) {
         <DialogHeader>
           <DialogTitle>用戶管理</DialogTitle>
           <DialogDescription>
-            核准 / 拒絕 / 刪除用戶，加備註方便辨識；本月用量為任務次數與累計時長
+            BWHR 員工資料同步後，依開放區處授權；個別拒絕仍可阻擋登入。
           </DialogDescription>
         </DialogHeader>
+        <section className="space-y-3 rounded-md border p-4">
+          <h3 className="text-sm font-semibold">開放區處</h3>
+          <p className="text-xs text-muted-foreground">
+            預設健康事業處；全部取消表示不開放一般員工。最後同步：
+            {access.lastSync ? new Date(access.lastSync).toLocaleString() : '尚未匯入 BWHR 資料'}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {Array.from(new Set([...access.divisions, ...access.allowedDivisions])).map((d) => (
+              <label key={d} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={access.allowedDivisions.includes(d)}
+                  onChange={(e) =>
+                    setAccess((a) => ({
+                      ...a,
+                      allowedDivisions: e.target.checked
+                        ? [...a.allowedDivisions, d]
+                        : a.allowedDivisions.filter((x) => x !== d),
+                    }))
+                  }
+                />
+                {d}
+              </label>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            disabled={loading || savingAccess}
+            onClick={async () => {
+              setSavingAccess(true);
+              try {
+                await api.users.saveAccess(access.allowedDivisions);
+                toast.success('開放區處已更新，既有登入也會套用');
+              } catch (e) {
+                toast.error((e as Error).message);
+              } finally {
+                setSavingAccess(false);
+              }
+            }}
+          >
+            儲存開放區處
+          </Button>
+        </section>
         {loading ? (
           <div className="py-8 text-center text-muted-foreground">載入中…</div>
         ) : users.length === 0 ? (
@@ -175,64 +223,91 @@ export function UserManageModal({ open, onClose }: Props) {
                 {users.map((u) => {
                   const stats = usage[u.id];
                   return (
-                  <tr key={u.id}>
-                    <td className="px-2 py-2 font-medium">{u.username}</td>
-                    <td className="px-2 py-2">
-                      <span className={cn('rounded px-2 py-0.5 text-xs', STATUS_COLOR[u.status])}>
-                        {STATUS_LABEL[u.status]}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap text-xs">
-                      {u.status !== 'approved' ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : !stats ? (
-                        <span className="text-muted-foreground">…</span>
-                      ) : (
-                        <UsageInline stats={stats} />
-                      )}
-                    </td>
-                    <td className="px-2 py-2">
-                      <NoteCell user={u} onSave={updateNote} />
-                    </td>
-                    <td className="px-2 py-2">
-                      <div className="flex justify-end gap-1">
-                        {u.status !== 'approved' && (
+                    <tr key={u.id}>
+                      <td className="px-2 py-2">
+                        <div className="font-medium">
+                          {u.name || u.username}{' '}
+                          <span className="text-xs text-muted-foreground">
+                            {u.name && u.username}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{u.email}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[u.division, u.department, u.unit].filter(Boolean).join(' / ')}
+                        </div>
+                        {u.authSource === 'bwhr' && u.sourceStatus !== 'ACTIVE' && (
+                          <span className="text-xs text-destructive">BWHR 已停用</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <span className={cn('rounded px-2 py-0.5 text-xs', STATUS_COLOR[u.status])}>
+                          {STATUS_LABEL[u.status]}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-xs">
+                        {u.status !== 'approved' ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : !stats ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              try {
+                                const stats = await api.tasks.userUsage(u.id);
+                                setUsage((prev) => ({ ...prev, [u.id]: stats }));
+                              } catch (e) {
+                                toast.error((e as Error).message);
+                              }
+                            }}
+                          >
+                            查看
+                          </Button>
+                        ) : (
+                          <UsageInline stats={stats} />
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <NoteCell user={u} onSave={updateNote} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex justify-end gap-1">
+                          {u.status !== 'approved' && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7 text-emerald-600 hover:text-emerald-700"
+                              onClick={() => approve(u)}
+                              aria-label="核准"
+                              title="核准"
+                            >
+                              <Check className="size-4" />
+                            </Button>
+                          )}
+                          {u.status !== 'rejected' && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7"
+                              onClick={() => reject(u)}
+                              aria-label="拒絕"
+                              title="拒絕"
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="size-7 text-emerald-600 hover:text-emerald-700"
-                            onClick={() => approve(u)}
-                            aria-label="核准"
-                            title="核准"
+                            className="size-7 text-destructive hover:text-destructive"
+                            onClick={() => remove(u)}
+                            aria-label={u.authSource === 'bwhr' ? '停用' : '刪除'}
+                            title={u.authSource === 'bwhr' ? '停用' : '刪除'}
                           >
-                            <Check className="size-4" />
+                            <Trash2 className="size-4" />
                           </Button>
-                        )}
-                        {u.status !== 'rejected' && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-7"
-                            onClick={() => reject(u)}
-                            aria-label="拒絕"
-                            title="拒絕"
-                          >
-                            <X className="size-4" />
-                          </Button>
-                        )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7 text-destructive hover:text-destructive"
-                          onClick={() => remove(u)}
-                          aria-label="刪除"
-                          title="刪除"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>

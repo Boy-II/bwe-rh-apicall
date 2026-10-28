@@ -4,13 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { PROMPT_PROFILES } from '@/lib/model-utils';
 import { compressImageToJpegDataUrl } from '@/lib/image-compress';
-import type { ChatHistoryEntry, NodeInfo } from '@/lib/types';
+import type { ChatHistoryEntry, NodeInfo, PromptProfile } from '@/lib/types';
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3 MB
 const MAX_IMAGES = 2;
 
 interface ChatContext {
+  cardId?: string;
+  promptProfile?: PromptProfile;
   cardTitle?: string;
   /** admin 寫的 AI 助手說明（不對 user 顯示）。送進 LLM system prompt */
   cardLlmNote?: string;
@@ -38,19 +41,31 @@ const WELCOME: UiMessage = {
     {
       type: 'text',
       content:
-        '您好！我是 BWE AI 助手 🤖\n可以問我關於 AI 應用選擇或提示詞撰寫的問題。\n\n支援同時傳送 2 張圖片（每張最大 3 MB），可拖曳到此處上傳。',
+        '您好！我可以幫您生成、優化、修改提示詞，並檢查是否符合目前模型的規則。\n\n可附上 2 張參考圖供分析（每張最大 3 MB）；這與生圖任務的圖片上傳數量分開計算。',
     },
   ],
 };
 
-function parseResponse(text: string): MsgPart[] {
+function parseResponse(
+  text: string,
+  moss = false,
+  validatedMoss: Set<string> = new Set(),
+): MsgPart[] {
   const parts: MsgPart[] = [];
   const regex = /```prompt\n?([\s\S]*?)```/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) parts.push({ type: 'text', content: text.slice(last, m.index) });
-    parts.push({ type: 'prompt', content: m[1].trim() });
+    const candidate = m[1].trim();
+    if (moss && /^[\[{]/.test(candidate) && !validatedMoss.has(candidate)) {
+      parts.push({
+        type: 'text',
+        content: 'MOSS 結構化提示詞尚未通過 Layout 編譯，請要求助手以 moss-layout 格式重新提供。',
+      });
+    } else {
+      parts.push({ type: 'prompt', content: candidate });
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push({ type: 'text', content: text.slice(last) });
@@ -59,6 +74,7 @@ function parseResponse(text: string): MsgPart[] {
 
 export function ChatSidebar({ context, onApplyPrompt }: Props) {
   const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<PromptProfile>('generic');
   const [messages, setMessages] = useState<UiMessage[]>([WELCOME]);
   const [history, setHistory] = useState<ChatHistoryEntry[]>([]);
   const [input, setInput] = useState('');
@@ -82,11 +98,16 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const ctx = useMemo(() => ({
-    cardTitle: context?.cardTitle,
-    cardLlmNote: context?.cardLlmNote,
-    nodeInfoList: context?.nodeInfoList,
-  }), [context]);
+  const ctx = useMemo(
+    () => ({
+      cardId: context?.cardId,
+      promptProfile: context?.promptProfile || target,
+      cardTitle: context?.cardTitle,
+      cardLlmNote: context?.cardLlmNote,
+      nodeInfoList: context?.nodeInfoList,
+    }),
+    [context, target],
+  );
 
   const acceptFiles = async (files: FileList | File[]) => {
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
@@ -148,13 +169,43 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
 
     try {
       const reply = await api.proxy.chat({
-        message: text || '請描述這些圖片的內容。',
+        message: text || '請根據這些圖片生成適合目前目標模型的提示詞。',
         history: history.slice(-20),
         context: ctx,
         images: imagesToSend,
       });
+      let rendered = reply;
+      const validatedMoss = new Set<string>();
+      const layouts = Array.from(reply.matchAll(/```moss-layout\s*\n?([\s\S]*?)```/g));
+      for (const block of layouts) {
+        try {
+          if ((context?.promptProfile || target) !== 'moss-image')
+            throw new Error('只有 MOSS-Image 可使用 Layout 格式');
+          const compiled = await api.proxy.compileMoss(JSON.parse(block[1]));
+          validatedMoss.add(compiled.prompt.trim());
+          rendered = rendered.replace(
+            block[0],
+            `畫布需設為 ${compiled.width} × ${compiled.height} px；請確認工作流尺寸一致。\n\n\`\`\`prompt\n${compiled.prompt}\n\`\`\``,
+          );
+        } catch (e) {
+          rendered = rendered.replace(
+            block[0],
+            `Layout 驗證失敗，無法套用：${(e as Error).message}`,
+          );
+        }
+      }
       setHistory((h) => [...h, { role: 'assistant', content: reply }]);
-      setMessages((m) => [...m, { role: 'model', parts: parseResponse(reply) }]);
+      setMessages((m) => [
+        ...m,
+        {
+          role: 'model',
+          parts: parseResponse(
+            rendered,
+            (context?.promptProfile || target) === 'moss-image',
+            validatedMoss,
+          ),
+        },
+      ]);
     } catch (e) {
       setMessages((m) => [
         ...m,
@@ -166,7 +217,9 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
   };
 
   const clearHistory = () => {
-    setMessages([{ role: 'model', parts: [{ type: 'text', content: '對話已清除。有什麼可以幫您的嗎？' }] }]);
+    setMessages([
+      { role: 'model', parts: [{ type: 'text', content: '對話已清除。有什麼可以幫您的嗎？' }] },
+    ]);
     setHistory([]);
     setPendingImages([]);
   };
@@ -256,6 +309,37 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
           </div>
         </header>
 
+        <div className="space-y-2 border-b px-4 py-3">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            提示詞目標
+            <select
+              aria-label="提示詞目標"
+              className="min-w-0 flex-1 rounded border bg-background p-1.5 text-foreground"
+              disabled={!!context?.cardId || isLoading}
+              value={context?.promptProfile || target}
+              onChange={(e) => setTarget(e.target.value as PromptProfile)}
+            >
+              {PROMPT_PROFILES.map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-1">
+            {['生成提示詞', '優化目前提示詞', '檢查模型規則'].map((action) => (
+              <Button
+                key={action}
+                size="sm"
+                variant="ghost"
+                disabled={isLoading}
+                onClick={() => setInput(action)}
+              >
+                {action}
+              </Button>
+            ))}
+          </div>
+        </div>
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.map((msg, i) => (
             <MessageBubble key={i} msg={msg} onApply={onApplyPrompt} />
@@ -343,13 +427,7 @@ export function ChatSidebar({ context, onApplyPrompt }: Props) {
   );
 }
 
-function MessageBubble({
-  msg,
-  onApply,
-}: {
-  msg: UiMessage;
-  onApply?: (text: string) => void;
-}) {
+function MessageBubble({ msg, onApply }: { msg: UiMessage; onApply?: (text: string) => void }) {
   const isUser = msg.role === 'user';
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -365,7 +443,10 @@ function MessageBubble({
           }
           if (part.type === 'prompt') {
             return (
-              <div key={i} className="rounded-md border border-border bg-background p-2 text-foreground">
+              <div
+                key={i}
+                className="rounded-md border border-border bg-background p-2 text-foreground"
+              >
                 <pre className="whitespace-pre-wrap break-words text-xs">{part.content}</pre>
                 {onApply && (
                   <Button size="sm" className="mt-2 w-full" onClick={() => onApply(part.content)}>

@@ -47,6 +47,9 @@ class CardCreate(BaseModel):
     instanceType: str = "default"  # default(24G) / plus(48G 4090)
     maxDurationSeconds: int = 0  # 0=用全域預設；>0=本卡片輪詢上限
     enableMaskEditor: bool = False  # 啟用遮罩編輯器（約定：欄位 1=source、欄位 2=mask）
+    category: str = "image"
+    imageMode: str = ""
+    promptProfile: str = "generic"
 
 
 class CardUpdate(BaseModel):
@@ -61,6 +64,9 @@ class CardUpdate(BaseModel):
     instanceType: Optional[str] = None  # None = 不更動
     maxDurationSeconds: Optional[int] = None  # None = 不更動
     enableMaskEditor: Optional[bool] = None  # None = 不更動
+    category: Optional[str] = None
+    imageMode: Optional[str] = None
+    promptProfile: Optional[str] = None
 
 
 class CardReorderRequest(BaseModel):
@@ -71,8 +77,8 @@ class CardReorderRequest(BaseModel):
 
 
 class AIChatRequest(BaseModel):
-    message: str
-    history: list = []
+    message: str = Field(max_length=20000)
+    history: list = Field(default_factory=list, max_length=20)
     context: dict = {}
     image: str = ""  # base64 data URL（單張，舊版相容）
     images: list[str] = []  # base64 data URLs（多張，最多 2）

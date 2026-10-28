@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import os
 
+import bcrypt
+
 ITERATIONS = 100_000
 
 
@@ -15,8 +17,13 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored: str) -> bool:
     try:
+        if stored.startswith(("$2a$", "$2b$", "$2y$")):
+            # bcrypt has a 72-byte input limit; BWHR's Node bcrypt uses that same limit.
+            return bcrypt.checkpw(password.encode()[:72], stored.encode())
         salt, key_hex = stored.split(":", 1)
-        new_key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), ITERATIONS)
+        new_key = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), ITERATIONS
+        )
         return hmac.compare_digest(new_key.hex(), key_hex)
     except Exception:
         return False

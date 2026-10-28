@@ -17,7 +17,9 @@ from app.schemas import (
     TaskQueryRequest,
     WorkflowFormatRequest,
 )
-from app.services import llm, runninghub
+from app.services import llm, runninghub, model_api
+from app.services import model_catalog, moss_layout
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +60,15 @@ def _clean_node_info_list(items: list) -> list:
         field_name = it.get("fieldName")
         if node_id is None or field_name is None:
             continue
-        out.append({
-            "nodeId": str(node_id),
-            "fieldName": str(field_name),
-            "fieldValue": it.get("fieldValue"),
-        })
+        out.append(
+            {
+                "nodeId": str(node_id),
+                "fieldName": str(field_name),
+                "fieldValue": it.get("fieldValue"),
+            }
+        )
     return out
+
 
 router = APIRouter()
 
@@ -118,7 +123,9 @@ def _parse_workflow_prompt(prompt_str: str) -> list[dict]:
                     "fieldValue": field_value,
                     "fieldType": field_type,
                     "description": f"{title} · {field_name}" if title else field_name,
-                    "descriptionEn": f"{class_type}.{field_name}" if class_type else field_name,
+                    "descriptionEn": f"{class_type}.{field_name}"
+                    if class_type
+                    else field_name,
                 }
             )
     return out
@@ -165,7 +172,9 @@ async def submit_workflow_task(
         "nodeInfoList": req.nodeInfoList,
         "retainSeconds": req.retainSeconds,
     }
-    resp = await runninghub.post_workflow(body, instance_type=req.instanceType or "default")
+    resp = await runninghub.post_workflow(
+        body, instance_type=req.instanceType or "default"
+    )
 
     # 成功才寫進 tasks 表
     if resp.get("code") == 0:
@@ -200,7 +209,9 @@ async def submit_workflow_task(
     "/api/proxy/submitTask",
     dependencies=[Depends(rate_limit("submit", limit=30, window_seconds=3600))],
 )
-async def submit_task(req: SubmitTaskRequest, user_id: str = Depends(auth.require_user)):
+async def submit_task(
+    req: SubmitTaskRequest, user_id: str = Depends(auth.require_user)
+):
     resp = await runninghub.post_with_apikey(
         "/task/openapi/ai-app/run",
         {"webappId": req.webappId, "nodeInfoList": req.nodeInfoList},
@@ -237,6 +248,11 @@ async def submit_task(req: SubmitTaskRequest, user_id: str = Depends(auth.requir
 @router.post("/api/proxy/cancelTask")
 async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require_user)):
     """取消執行中任務。"""
+    task = await _owned_task(req.taskId, user_id)
+    if task["card_type"] == "model":
+        raise HTTPException(
+            status_code=400, detail="此標準模型未提供取消 API；停止等待不會取消上游任務"
+        )
     resp = await runninghub.cancel_task(req.taskId)
 
     # 成功才標記 DB（用戶自己的任務）
@@ -260,7 +276,47 @@ async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require
 
 
 @router.post("/api/proxy/queryTaskOutputs")
-async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.require_user)):
+async def query_task_outputs(
+    req: TaskQueryRequest, user_id: str = Depends(auth.require_user)
+):
+    task = await _owned_task(req.taskId, user_id)
+    if task["card_type"] == "model":
+        data = await model_api.query(req.taskId)
+        status = data.get("status") or data.get("taskStatus") or ""
+        if status in {"SUCCESS", "FAILED", "CANCEL", "TIMEOUT"}:
+            raw_results = data.get("results") or []
+            results = [
+                {
+                    "url": r.get("url") or r.get("outputUrl"),
+                    "fileType": r.get("outputType") or r.get("fileType") or "image",
+                }
+                for r in raw_results
+                if isinstance(r, dict) and (r.get("url") or r.get("outputUrl"))
+            ]
+            if not results and data.get("outputUrl"):
+                results = [{"url": data["outputUrl"], "fileType": "image"}]
+            usage = data.get("usage") or {}
+            await db.execute(
+                """UPDATE tasks SET status=$2,results=$3,raw_response=$4,
+                cost_time=$5,consume_money=$6,third_party_consume_money=$7,error_message=$8,completed_at=NOW()
+                WHERE id=$1""",
+                task["id"],
+                status,
+                results,
+                data,
+                _to_float(usage.get("taskCostTime")),
+                _to_float(usage.get("consumeMoney")),
+                _to_float(usage.get("thirdPartyConsumeMoney")),
+                None
+                if status == "SUCCESS"
+                else str(
+                    data.get("errorMessage") or data.get("failedReason") or status
+                ),
+            )
+            data["results"] = [
+                {"url": r["url"], "outputType": r["fileType"]} for r in results
+            ]
+        return data
     resp = await runninghub.post_with_bearer(
         "/openapi/v2/query", {"taskId": req.taskId}, idempotent=True
     )
@@ -279,11 +335,16 @@ async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.
             results: list = []
             if isinstance(data.get("results"), list):
                 results = [
-                    {"url": r.get("url"), "fileType": r.get("outputType") or r.get("fileType") or ""}
+                    {
+                        "url": r.get("url"),
+                        "fileType": r.get("outputType") or r.get("fileType") or "",
+                    }
                     for r in data["results"]
                 ]
             elif data.get("fileUrl"):
-                results = [{"url": data["fileUrl"], "fileType": data.get("fileType") or ""}]
+                results = [
+                    {"url": data["fileUrl"], "fileType": data.get("fileType") or ""}
+                ]
 
             error_msg = None
             if status in {"FAILED", "TIMEOUT"}:
@@ -327,6 +388,19 @@ async def query_task_outputs(req: TaskQueryRequest, user_id: str = Depends(auth.
     return resp
 
 
+async def _owned_task(task_id: str, user_id: str) -> dict:
+    if not task_id:
+        raise HTTPException(status_code=400, detail="缺少 taskId")
+    task = await db.fetch_one(
+        "SELECT id,card_type FROM tasks WHERE rh_task_id=$1 AND user_id=$2",
+        task_id,
+        user_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="任務不存在")
+    return task
+
+
 @router.post(
     "/api/proxy/uploadFile",
     dependencies=[Depends(rate_limit("upload", limit=20, window_seconds=60))],
@@ -345,7 +419,9 @@ async def upload_file(
 
 @router.post("/api/proxy/getAccountStatus")
 async def get_account_status(_user: str = Depends(auth.require_user)):
-    return await runninghub.post_with_apikey("/api/user/getAccountStatus", {}, idempotent=True)
+    return await runninghub.post_with_apikey(
+        "/api/user/getAccountStatus", {}, idempotent=True
+    )
 
 
 # ===== AI 聊天 =====
@@ -356,6 +432,30 @@ async def get_account_status(_user: str = Depends(auth.require_user)):
     dependencies=[Depends(rate_limit("chat", limit=10, window_seconds=60))],
 )
 async def proxy_chat(req: AIChatRequest, _user: str = Depends(auth.require_user)):
+    profile = req.context.get("promptProfile", "generic")
+    context = {
+        "promptProfile": profile
+        if isinstance(profile, str) and profile in model_catalog.PROFILES
+        else "generic"
+    }
+    if req.context.get("cardId"):
+        card = await db.fetch_one(
+            "SELECT * FROM cards WHERE id=$1 AND enabled=TRUE",
+            str(req.context["cardId"]),
+        )
+        if not card:
+            raise HTTPException(status_code=404, detail="應用不存在或已停用")
+        context.update(
+            cardTitle=card["title"],
+            cardLlmNote=card.get("llm_note", ""),
+            promptProfile=card["prompt_profile"],
+        )
+        if card["card_type"] == "model":
+            model = model_catalog.get_model(card["model_key"])
+            context.update(promptProfile=model["profile"], modelSchema=model["params"])
+    nodes = req.context.get("nodeInfoList")
+    if isinstance(nodes, list):
+        context["nodeInfoList"] = nodes[:60]
     # 合併 image / images：舊欄位若有值，補進 images 列表（最多 2 張）
     images = list(req.images or [])
     if req.image and req.image not in images:
@@ -365,10 +465,32 @@ async def proxy_chat(req: AIChatRequest, _user: str = Depends(auth.require_user)
         runninghub.client(),
         message=req.message,
         history=req.history,
-        context=req.context,
+        context=context,
         images=images,
     )
     return {"text": text}
+
+
+class MossDraftRequest(BaseModel):
+    draft: dict
+
+
+@router.post(
+    "/api/proxy/compile-moss-layout",
+    dependencies=[Depends(rate_limit("layout", 30, 60))],
+)
+async def compile_moss_layout(
+    req: MossDraftRequest, _user: str = Depends(auth.require_user)
+):
+    try:
+        prompt = moss_layout.compile_layout(req.draft)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return {
+        "prompt": prompt,
+        "width": req.draft["width"],
+        "height": req.draft["height"],
+    }
 
 
 # ===== 設定狀態（不需 auth）=====

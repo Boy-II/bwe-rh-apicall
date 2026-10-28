@@ -147,3 +147,84 @@ git push
 ## 授權
 
 
+
+
+## BWHR 員工帳號與區處授權
+
+普通帳號改用 BWHR 員工編號及密碼，登入驗證只讀本平台 PostgreSQL。admin 帳號與 `ADMIN_PASSWORD` 保留。原自助註冊入口停用；舊本地帳號和歷史資料保留，但不自動與員工身分合併。
+
+先備份本平台資料庫並套用 migration（正式環境需安排部署，本次修改未執行正式庫更新）：
+
+```bash
+rtk proxy python -m app.migrations.runner
+```
+
+在可存取 BWHR SQLite 的機器，以 SQLite backup API 建立一致性快照；不要只複製正在運行的 `bwhr.db` 主檔而遺漏 WAL。下例路徑請替換為實際唯讀來源與安全快照位置：
+
+```python
+from contextlib import closing
+import sqlite3
+with closing(sqlite3.connect('file:/path/to/bwhr.db?mode=ro', uri=True)) as source:
+    with closing(sqlite3.connect('/safe/private/bwhr.snapshot.db')) as target:
+        source.backup(target)
+```
+
+完整快照含有人事資料，應放在權限為 700 的私人目錄，僅供同步使用，完成後依組織資料管理規範清理。同步工具只擷取 `Employee` 的員編、bcrypt 雜湊、姓名、email、區處/部門/單位及啟用狀態；不輸出個資或密碼。程式不需要也不會取得明文密碼。
+
+在可連線本平台 PG 的環境執行，連線沿用 `DB_POSTGRESDB_*`：
+
+```bash
+rtk proxy python -m app.sync_bwhr --sqlite-path /safe/private/bwhr.snapshot.db --dry-run
+rtk proxy python -m app.sync_bwhr --sqlite-path /safe/private/bwhr.snapshot.db
+```
+
+同步以 transaction 完成，可重複執行。若員編與舊本地帳號衝突，整批回滾，須先人工確認身分對應；不會直接覆寫舊帳號。空來源、重複員編、錯誤欄位及不支援的雜湊會中止。來源中已刪除/停用的員工會失去使用資格，來源密碼變動會讓舊登入失效，本地個別拒絕與備註會保留。管理介面的 BWHR 帳號「停用」會保留身分與拒絕設定，不會實體刪除後又被下一次同步復活。沒有 BWHR 密碼的員工須先回 BWHR 設定。
+
+管理員在「用戶 → 開放區處」選擇可使用的區處，預設健康事業處。清空名單代表不開放任何普通員工；更新名單也會限制已登入者的下一次請求。
+
+新增員工、調職、離職及變更 BWHR 密碼，需重新同步才會反映於本平台。初版提供手動 CLI；若要定期同步，可由維運排程先建立一致性快照，再執行上述命令。此次未安裝 VPS 排程、未匯入正式員工資料。SQLite 檔案及本地參考倉庫已排除於 Git 與 Docker 建置內容。
+
+## 分類、標準圖片模型與助手
+
+首頁可依圖片／影片／音源分類及文生圖／圖生圖篩選。既有卡片預設圖片，管理員可調整分類及 AI 助手的模型規則。內建五組圖片模型：全能图片PRO（Gemini Pro）、全能图片V2（Gemini Flash）、悠船 v7（Midjourney）、GPT Image 2、Seedream v5 Pro（即夢）；每組各有文生圖/圖生圖卡片。首次啟動加入，後續不覆寫管理員的修改或停用狀態。
+
+標準模型使用 `RUNNINGHUB_MODEL_BASE_URL`（預設 `https://www.runninghub.cn/openapi/v2`），與既有 workflow/webapp 的 `RUNNINGHUB_BASE_URL` 分開。兩者共用 `RUNNINGHUB_API_KEY`。圖片經標準 API 上傳取得 URL 後才提交模型任務；參數依本專案的版本化最小 schema 驗證。
+
+圖生圖支援多選、新增、移除、預覽、失敗重試。輸入等比縮至長邊最多 2048px，不放大，JPEG 品質 0.9；PNG/WebP 以 PNG 保留透明度。依模型限制張數與縮圖後大小；Flash 參考圖最多 14 張，其餘多圖模型最多 10 張，悠船 v7 使用底圖/風格/角色參考各一張。未完成或失敗的上傳會阻止提交。停止等待不代表取消上游任務，已提交任務仍可能產生費用。
+
+AI 助手專注生成、優化、修改提示詞及模型規則檢查。保留一鍵套用，加入模型 profile，修正多輪對話歷史；管理員 System Prompt 改作補充規則。Krea2/MOSS-Image 先提供提示詞協助，可綁定既有 workflow；未加入猜測的標準 API 端點。MOSS Layout 經程式驗證與座標轉換後才提供可套用結果，並顯示必須一致的畫布尺寸。
+
+提示詞規則參考：
+
+- [GPT Image 2 風格與模板](https://github.com/freestylefly/awesome-gpt-image-2)
+- [Krea2 提示詞規則](https://github.com/AI-KSK/krea2-prompt-suite/blob/main/SKILL.md)
+- [MOSS-Image caption 與 Layout](https://github.com/OpenMOSS/MOSS-Image/tree/main/skills/moss-image-prompt-enhancer)
+
+完整參考資料只在本地 `runninghub/`，不提交。本產品僅保存自行整理的必要規則與最小模型 schema，不需要執行時存取這些本地倉庫。
+
+## 變更驗證
+
+```bash
+rtk proxy python -m unittest discover -s tests -v
+rtk proxy npm --prefix web ci
+rtk proxy npm --prefix web test
+rtk proxy npm --prefix web run build
+rtk proxy npm --prefix web run test:browser
+```
+
+PG integration 使用自建臨時 cluster，完全不讀取應用 DB 憑證；可用 `TEST_PG_BIN` 指定 PostgreSQL 的 bin 目錄，未提供二進位時測試會明確 skip。瀏覽器測試使用本機 Chrome（macOS）或已安裝的 Playwright Chromium；其他環境可先執行 `rtk proxy npm --prefix web exec playwright install chromium`。測試的上游 API 均為 mock，不提交付費任務。
+
+
+## 封面隨專案部署
+
+目前選用的 10 張模型封面已保存於 `app/data/cover_presets/`，`manifest.json` 記錄固定卡片 ID 與 `/covers/` 路徑；這些是專案正式資產，可納入版本控制，與僅供本地查閱的 `runninghub/` 參考資料分開。
+
+Dockerfile 的 `COPY app/ ./app/` 會將封面一起打包。應用啟動會將缺少的封面補入 `/card/covers/`（有持久卷時）或本地 `covers/`，再為尚未設定封面的既有卡片填入預設路徑。已有的持久卷檔案及非空白卡片封面設定不會被覆寫，不需要連線到開發用 PG 才能取得預設封面。
+
+後續若在管理介面更換封面，在建置／部署前重新匯出即可更新專案資產：
+
+```bash
+rtk proxy python -m app.export_covers
+```
+
+此命令使用當前 PostgreSQL 中的卡片對應與本機／持久卷封面檔，只輸出封面與卡片 ID，不會匯出使用者、API key 或資料庫憑證。來源空白、檔案缺失或路徑異常時會拒絕更新清單，保留原本的打包資產。上傳但未套用到卡片的舊圖片仍保留於原始上傳目錄，不會被刪除。

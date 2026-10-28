@@ -2,31 +2,32 @@
 
 import secrets
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.core import auth, db
 from app.schemas import CardCreate, CardReorderRequest, CardUpdate
+from app.services.model_catalog import PROFILES
+from app.core.paths import COVERS_DIR
 
 router = APIRouter()
 
 
 # 預覽圖儲存位置：優先放到 Zeabur 持久化卷的 /card/covers/，否則用 ./covers/
-COVER_BASE_DIR = Path("/card/covers") if Path("/card").exists() else Path("./covers")
+COVER_BASE_DIR = COVERS_DIR
 COVER_BASE_DIR.mkdir(parents=True, exist_ok=True)
 COVER_URL_PREFIX = "/covers"  # 由 main.py mount StaticFiles
 
 # 圖片：5 MB 上限（前端會 client-side 壓縮，正常落點 < 200 KB）
 # 影片：10 MB 上限（短 mp4 動圖；前端不壓縮）
 COVER_TYPE_EXT: dict[str, tuple[str, int]] = {
-    "image/png":       (".png",  5 * 1024 * 1024),
-    "image/jpeg":      (".jpg",  5 * 1024 * 1024),
-    "image/webp":      (".webp", 5 * 1024 * 1024),
-    "image/gif":       (".gif",  5 * 1024 * 1024),
-    "video/mp4":       (".mp4",  10 * 1024 * 1024),
-    "video/webm":      (".webm", 10 * 1024 * 1024),
-    "video/quicktime": (".mov",  10 * 1024 * 1024),
+    "image/png": (".png", 5 * 1024 * 1024),
+    "image/jpeg": (".jpg", 5 * 1024 * 1024),
+    "image/webp": (".webp", 5 * 1024 * 1024),
+    "image/gif": (".gif", 5 * 1024 * 1024),
+    "video/mp4": (".mp4", 10 * 1024 * 1024),
+    "video/webm": (".webm", 10 * 1024 * 1024),
+    "video/quicktime": (".mov", 10 * 1024 * 1024),
 }
 
 
@@ -35,6 +36,10 @@ def _row_to_dict(row: dict) -> dict:
     return {
         "id": row["id"],
         "cardType": row.get("card_type") or "webapp",
+        "category": row.get("category", "image"),
+        "imageMode": row.get("image_mode", ""),
+        "modelKey": row.get("model_key", ""),
+        "promptProfile": row.get("prompt_profile", "generic"),
         "webappId": row["webapp_id"],
         "workflowId": row.get("workflow_id") or "",
         "title": row["title"],
@@ -56,7 +61,7 @@ def _row_to_dict(row: dict) -> dict:
 _CARD_COLUMNS = (
     "id, card_type, webapp_id, workflow_id, title, description, llm_note, icon, color, "
     "cover_url, tags, editable_fields, instance_type, max_duration_seconds, "
-    "enable_mask_editor, sort_order, created_at"
+    "enable_mask_editor, sort_order, created_at, category, image_mode, model_key, prompt_profile"
 )
 
 
@@ -91,19 +96,34 @@ async def list_cards(_user: str = Depends(auth.require_user)):
 @router.post("/api/admin/cards")
 async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
     if req.cardType not in {"webapp", "workflow"}:
-        raise HTTPException(status_code=400, detail="cardType 必須為 webapp 或 workflow")
+        raise HTTPException(
+            status_code=400, detail="cardType 必須為 webapp 或 workflow"
+        )
     if req.cardType == "webapp" and not req.webappId.strip():
         raise HTTPException(status_code=400, detail="webapp 卡片需要 webappId")
     if req.cardType == "workflow" and not req.workflowId.strip():
         raise HTTPException(status_code=400, detail="workflow 卡片需要 workflowId")
 
+    _validate_metadata(req.category, req.imageMode, req.promptProfile)
     card_id = secrets.token_hex(8)
     now = datetime.now(timezone.utc)
-    next_sort = await db.fetch_val("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM cards")
+    next_sort = await db.fetch_val(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM cards"
+    )
 
-    editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName, "fieldType": e.fieldType, "displayName": e.displayName} for e in (req.editableFields or [])]
+    editable = [
+        {
+            "nodeId": e.nodeId,
+            "fieldName": e.fieldName,
+            "fieldType": e.fieldType,
+            "displayName": e.displayName,
+        }
+        for e in (req.editableFields or [])
+    ]
 
-    instance = req.instanceType if req.instanceType in {"default", "plus"} else "default"
+    instance = (
+        req.instanceType if req.instanceType in {"default", "plus"} else "default"
+    )
     max_dur = max(0, int(req.maxDurationSeconds or 0))
     tags = _normalize_tags(req.tags or [])
 
@@ -112,9 +132,9 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         INSERT INTO cards (
             id, card_type, webapp_id, workflow_id, title, description, llm_note, icon,
             color, cover_url, tags, editable_fields, instance_type, max_duration_seconds,
-            enable_mask_editor, sort_order, created_at, updated_at
+            enable_mask_editor, sort_order, created_at, updated_at, category, image_mode, prompt_profile
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17, $18, $19, $20)
         RETURNING {_CARD_COLUMNS}
         """,
         card_id,
@@ -134,6 +154,9 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         bool(req.enableMaskEditor),
         next_sort,
         now,
+        req.category,
+        req.imageMode,
+        req.promptProfile,
     )
     return _row_to_dict(row)
 
@@ -143,11 +166,25 @@ async def admin_update_card(
     card_id: str, req: CardUpdate, _: str = Depends(auth.require_admin)
 ):
     now = datetime.now(timezone.utc)
+    _validate_metadata(req.category, req.imageMode, req.promptProfile)
+    existing = await db.fetch_one("SELECT card_type FROM cards WHERE id=$1", card_id)
+    if (
+        existing
+        and existing["card_type"] == "model"
+        and any(x is not None for x in (req.category, req.imageMode, req.promptProfile))
+    ):
+        # Model identity comes from the versioned catalog, never arbitrary admin input.
+        req.category = req.imageMode = req.promptProfile = None
 
     # 動態組欄位：editableFields / instanceType 為 None 表示不更動
     sets: list[str] = [
-        "title = $2", "description = $3", "llm_note = $4",
-        "icon = $5", "color = $6", "cover_url = $7", "updated_at = $8",
+        "title = $2",
+        "description = $3",
+        "llm_note = $4",
+        "icon = $5",
+        "color = $6",
+        "cover_url = $7",
+        "updated_at = $8",
     ]
     args: list = [
         card_id,
@@ -161,12 +198,22 @@ async def admin_update_card(
     ]
     next_idx = 9
     if req.editableFields is not None:
-        editable = [{"nodeId": e.nodeId, "fieldName": e.fieldName, "fieldType": e.fieldType, "displayName": e.displayName} for e in req.editableFields]
+        editable = [
+            {
+                "nodeId": e.nodeId,
+                "fieldName": e.fieldName,
+                "fieldType": e.fieldType,
+                "displayName": e.displayName,
+            }
+            for e in req.editableFields
+        ]
         sets.append(f"editable_fields = ${next_idx}")
         args.append(editable)
         next_idx += 1
     if req.instanceType is not None:
-        instance = req.instanceType if req.instanceType in {"default", "plus"} else "default"
+        instance = (
+            req.instanceType if req.instanceType in {"default", "plus"} else "default"
+        )
         sets.append(f"instance_type = ${next_idx}")
         args.append(instance)
         next_idx += 1
@@ -182,6 +229,16 @@ async def admin_update_card(
         sets.append(f"enable_mask_editor = ${next_idx}")
         args.append(bool(req.enableMaskEditor))
         next_idx += 1
+
+    for column, value in [
+        ("category", req.category),
+        ("image_mode", req.imageMode),
+        ("prompt_profile", req.promptProfile),
+    ]:
+        if value is not None:
+            sets.append(f"{column} = ${next_idx}")
+            args.append(value)
+            next_idx += 1
 
     row = await db.fetch_one(
         f"""
@@ -200,8 +257,10 @@ async def admin_update_card(
 
 @router.delete("/api/admin/cards/{card_id}")
 async def admin_delete_card(card_id: str, _: str = Depends(auth.require_admin)):
-    result = await db.execute("DELETE FROM cards WHERE id = $1", card_id)
-    if result == "DELETE 0":
+    result = await db.execute(
+        "UPDATE cards SET enabled=FALSE,updated_at=NOW() WHERE id=$1", card_id
+    )
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="卡片不存在")
     return {"success": True}
 
@@ -250,3 +309,12 @@ async def admin_upload_cover(
     target.write_bytes(content)
 
     return {"coverUrl": f"{COVER_URL_PREFIX}/{filename}"}
+
+
+def _validate_metadata(category, mode, profile):
+    if category is not None and category not in {"image", "video", "audio"}:
+        raise HTTPException(status_code=400, detail="分類無效")
+    if mode is not None and mode not in {"", "text-to-image", "image-to-image"}:
+        raise HTTPException(status_code=400, detail="圖片模式無效")
+    if profile is not None and profile not in PROFILES:
+        raise HTTPException(status_code=400, detail="助手模型規則無效")

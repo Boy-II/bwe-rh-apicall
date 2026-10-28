@@ -3,6 +3,17 @@
 .env
 .env.example
 .venv
+venv/
+runninghub/
+tests/
+web/tests/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.local-dev/
+/covers/
 __pycache__
 *.pyc
 *.pyo

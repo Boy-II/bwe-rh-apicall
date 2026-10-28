@@ -18,13 +18,17 @@ const STATUS_LABEL: Record<string, string> = {
   SUCCESS: '完成',
   FAILED: '失敗',
   TIMEOUT: '逾時',
+  CANCEL: '已取消',
   CANCELED: '已取消',
 };
 
 function statusColor(status: string) {
-  if (status === 'SUCCESS') return 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400';
-  if (status === 'FAILED' || status === 'TIMEOUT') return 'text-rose-700 bg-rose-100 dark:bg-rose-950 dark:text-rose-400';
-  if (status === 'CANCELED') return 'text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300';
+  if (status === 'SUCCESS')
+    return 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400';
+  if (status === 'FAILED' || status === 'TIMEOUT')
+    return 'text-rose-700 bg-rose-100 dark:bg-rose-950 dark:text-rose-400';
+  if (status === 'CANCELED')
+    return 'text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300';
   return 'text-yellow-700 bg-yellow-100 dark:bg-yellow-950 dark:text-yellow-400';
 }
 
@@ -107,9 +111,7 @@ export function TaskHistoryView({ onBack, onRerun }: Props) {
         {loading ? (
           <div className="py-12 text-center text-muted-foreground">載入中…</div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            最近 30 天內沒有任務記錄
-          </div>
+          <div className="py-12 text-center text-muted-foreground">最近 30 天內沒有任務記錄</div>
         ) : (
           <div className="space-y-4">
             {items.map((task) => (
@@ -118,6 +120,14 @@ export function TaskHistoryView({ onBack, onRerun }: Props) {
                 task={task}
                 canRerun={!!task.cardId && !!cardsById[task.cardId]}
                 onRerun={() => handleRerun(task)}
+                onRefresh={async () => {
+                  try {
+                    await api.proxy.queryTaskOutputs(task.rhTaskId);
+                    await reload();
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  }
+                }}
               />
             ))}
           </div>
@@ -131,11 +141,14 @@ function TaskRow({
   task,
   canRerun,
   onRerun,
+  onRefresh,
 }: {
   task: TaskHistoryItem;
   canRerun: boolean;
   onRerun: () => void;
+  onRefresh: () => Promise<void>;
 }) {
+  const [refreshing, setRefreshing] = useState(false);
   const hasResults = task.results.length > 0;
   return (
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -145,6 +158,24 @@ function TaskRow({
           <span className={`rounded px-2 py-0.5 text-xs ${statusColor(task.status)}`}>
             {STATUS_LABEL[task.status] || task.status}
           </span>
+          {task.rhTaskId && ['CREATE', 'QUEUED', 'RUNNING', 'TIMEOUT'].includes(task.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={refreshing}
+              onClick={async () => {
+                setRefreshing(true);
+                try {
+                  await onRefresh();
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+            >
+              <RefreshCw className="size-3" />
+              更新任務狀態
+            </Button>
+          )}
           {canRerun && (
             <Button variant="outline" size="sm" onClick={onRerun} title="用相同輸入重跑">
               <RotateCw className="size-3" /> 重跑

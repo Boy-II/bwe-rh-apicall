@@ -29,18 +29,35 @@ export async function pollTask(taskId: string, cb: PollCallbacks = {}): Promise<
     const status = result.status || result.taskStatus || '';
     cb.onProgress?.(status, result);
     if (status === 'SUCCESS') return result;
-    if (status === 'TIMEOUT' || status === 'FAILED') {
+    if (
+      status === 'TIMEOUT' ||
+      status === 'FAILED' ||
+      status === 'CANCEL' ||
+      status === 'CANCELED'
+    ) {
       const code = (result as { errorCode?: string }).errorCode || '';
-      const msg = result.errorMessage || (typeof result.failedReason === 'string' ? result.failedReason : '') || (status === 'TIMEOUT' ? '上游回報 TIMEOUT' : '未知錯誤');
-      const label = status === 'TIMEOUT' ? '任務逾時' : '任務失敗';
+      const msg =
+        result.errorMessage ||
+        (typeof result.failedReason === 'string' ? result.failedReason : '') ||
+        (status === 'TIMEOUT' ? '上游回報 TIMEOUT' : '未知錯誤');
+      const label =
+        status === 'TIMEOUT'
+          ? '任務逾時'
+          : status === 'CANCEL' || status === 'CANCELED'
+            ? '任務已取消'
+            : '任務失敗';
       throw new Error(code ? `[${code}] ${label}：${msg}` : `${label}：${msg}`);
     }
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(resolve, POLL_INTERVAL);
-      cb.signal?.addEventListener('abort', () => {
+      const onAbort = () => {
         clearTimeout(t);
-        reject(new ApiError('已取消', 0));
-      });
+        reject(new ApiError('已停止等待', 0));
+      };
+      const t = setTimeout(() => {
+        cb.signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, POLL_INTERVAL);
+      cb.signal?.addEventListener('abort', onAbort, { once: true });
     });
   }
   // 本地輪詢用盡（10 分鐘）— RH 平台單任務最長 60 分鐘，仍可能在跑
