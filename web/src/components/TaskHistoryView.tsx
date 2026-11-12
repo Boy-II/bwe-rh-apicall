@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from './ThemeToggle';
 import api from '@/lib/api';
 import type { Card, TaskHistoryItem, TaskHistoryResult } from '@/lib/types';
-import type { RerunPrefill } from '@/App';
+import type { GeneratePrefill, RerunPrefill } from '@/App';
 
 interface Props {
   onBack: () => void;
   onRerun: (card: Card, prefill: RerunPrefill) => void;
+  onRerunModel: (prefill: GeneratePrefill) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -49,16 +50,22 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString();
 }
 
-export function TaskHistoryView({ onBack, onRerun }: Props) {
+export function TaskHistoryView({ onBack, onRerun, onRerunModel }: Props) {
   const [items, setItems] = useState<TaskHistoryItem[]>([]);
   const [cardsById, setCardsById] = useState<Record<string, Card>>({});
+  const [modelKeys, setModelKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const reload = async () => {
     setLoading(true);
     try {
-      const [list, cards] = await Promise.all([api.tasks.myHistory(50, 30), api.cards.list()]);
+      const [list, cards, models] = await Promise.all([
+        api.tasks.myHistory(50, 30),
+        api.cards.list(),
+        api.imageModels.list().catch(() => []),
+      ]);
       setItems(list);
+      setModelKeys(new Set(models.map((m) => m.key)));
       setCardsById(Object.fromEntries(cards.map((c) => [c.id, c])));
     } catch (e) {
       toast.error((e as Error).message);
@@ -72,6 +79,10 @@ export function TaskHistoryView({ onBack, onRerun }: Props) {
   }, []);
 
   const handleRerun = (task: TaskHistoryItem) => {
+    if (task.cardType === 'model') {
+      onRerunModel({ modelKey: task.modelKey || '', nodeInput: task.nodeInput || [] });
+      return;
+    }
     if (!task.cardId) {
       toast.error('此任務沒有對應的卡片資訊');
       return;
@@ -118,7 +129,11 @@ export function TaskHistoryView({ onBack, onRerun }: Props) {
               <TaskRow
                 key={task.id}
                 task={task}
-                canRerun={!!task.cardId && !!cardsById[task.cardId]}
+                canRerun={
+                  task.cardType === 'model'
+                    ? modelKeys.has(task.modelKey || '')
+                    : !!task.cardId && !!cardsById[task.cardId]
+                }
                 onRerun={() => handleRerun(task)}
                 onRefresh={async () => {
                   try {

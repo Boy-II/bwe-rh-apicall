@@ -1,40 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Settings, Users, History, Compass, Search, X } from 'lucide-react';
+import { Compass, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CardGrid } from './CardGrid';
 import { CardEditModal } from './CardEditModal';
 import { ChatSidebar } from './ChatSidebar';
-import { UserManageModal } from './UserManageModal';
-import { AiConfigModal } from './AiConfigModal';
 import { AppBrowserModal } from './AppBrowserModal';
-import { BalancePill } from './BalancePill';
-import { ThemeToggle } from './ThemeToggle';
 import { useAuth, isAdmin } from '@/lib/auth-store';
 import { mergeLastUsed, sortCards, type CardWithUsage } from '@/lib/card-utils';
 import api from '@/lib/api';
 import { filterModelCards } from '@/lib/model-utils';
-import type { Card, Category, ImageMode } from '@/lib/types';
+import type { Card } from '@/lib/types';
 
 interface Props {
   onSelect: (card: Card) => void;
-  onOpenHistory: () => void;
 }
 
-export function HomePage({ onSelect, onOpenHistory }: Props) {
-  const { user, logout } = useAuth();
+/** AI 應用：RunningHub 特殊工作流卡片（webapp／workflow）。 */
+export function AppsPage({ onSelect }: Props) {
+  const user = useAuth((s) => s.user);
   const admin = isAdmin(user);
   const [cards, setCards] = useState<CardWithUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<Card | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [usersOpen, setUsersOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<Category | 'all'>('all');
-  const [imageMode, setImageMode] = useState<ImageMode>('');
 
   // 卡片所有 tags 集合（去重）
   const allTags = useMemo(() => {
@@ -45,8 +37,8 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
 
   // 過濾後的清單：title / description / tags 任一命中
   const visibleCards = useMemo(
-    () => filterModelCards(cards, category, imageMode, search),
-    [cards, category, imageMode, search],
+    () => filterModelCards(cards, 'all', '', search),
+    [cards, search],
   );
 
   const reload = useCallback(async () => {
@@ -92,86 +84,19 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-3">
-          <h1 className="text-xl font-semibold">
-            <span className="text-primary">BWE</span> AI 應用平台
-          </h1>
-          <div className="flex flex-wrap items-center gap-2">
-            {admin && <BalancePill />}
-            {admin && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => setBrowserOpen(true)}>
-                  <Compass className="size-4" /> 探索
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setUsersOpen(true)}>
-                  <Users className="size-4" /> 用戶
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setAiOpen(true)}>
-                  <Settings className="size-4" /> AI
-                </Button>
-              </>
-            )}
-            <Button variant="outline" size="sm" onClick={onOpenHistory}>
-              <History className="size-4" /> 我的歷史
-            </Button>
-            <ThemeToggle />
-            <span className="text-sm text-muted-foreground">
-              {user?.name || user?.username}{' '}
-              {admin && <span className="text-primary">（管理員）</span>}
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => logout()}>
-              登出
-            </Button>
-          </div>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">AI 應用</h1>
+          <p className="text-sm text-muted-foreground">RunningHub 特殊工作流</p>
         </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <nav aria-label="應用分類" className="mb-4 flex flex-wrap gap-2">
-          {(
-            [
-              ['all', '全部'],
-              ['image', '圖片'],
-              ['video', '影片'],
-              ['audio', '音源'],
-            ] as const
-          ).map(([key, label]) => (
-            <Button
-              key={key}
-              variant="outline"
-              aria-pressed={category === key}
-              className={category === key ? 'border-primary bg-primary/10 text-foreground' : ''}
-              size="sm"
-              onClick={() => {
-                setCategory(key);
-                setImageMode('');
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </nav>
-        {category === 'image' && (
-          <nav aria-label="圖片生成方式" className="mb-6 flex gap-2">
-            {(
-              [
-                ['', '全部圖片'],
-                ['text-to-image', '文生圖'],
-                ['image-to-image', '圖生圖'],
-              ] as const
-            ).map(([key, label]) => (
-              <Button
-                key={key}
-                variant={imageMode === key ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setImageMode(key)}
-              >
-                {label}
-              </Button>
-            ))}
-          </nav>
+        {admin && (
+          <Button variant="outline" size="sm" onClick={() => setBrowserOpen(true)}>
+            <Compass className="size-4" /> 探索
+          </Button>
         )}
+      </div>
+      <main>
         {!loading && cards.length > 0 && (
           <div className="mb-6 space-y-3">
             <div className="relative">
@@ -228,7 +153,7 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
           <CardGrid
             cards={visibleCards}
             isAdmin={admin}
-            disableSort={!!search.trim() || category !== 'all' || !!imageMode}
+            disableSort={!!search.trim()}
             onSelect={onSelect}
             onEdit={(c) => {
               setEditTarget(c);
@@ -249,8 +174,6 @@ export function HomePage({ onSelect, onOpenHistory }: Props) {
         onClose={() => setEditOpen(false)}
         onSaved={reload}
       />
-      <UserManageModal open={usersOpen} onClose={() => setUsersOpen(false)} />
-      <AiConfigModal open={aiOpen} onClose={() => setAiOpen(false)} />
       <AppBrowserModal
         open={browserOpen}
         onClose={() => setBrowserOpen(false)}

@@ -39,8 +39,12 @@ from app.routers import (
     tasks,
     users,
     models,
+    admin_models,
+    templates,
+    prompt,
 )
-from app.services.model_catalog import seed_model_cards
+from app.services.image_registry import seed_image_models
+from app.services import media, openai_images
 from app.services import runninghub
 from app.services.cover_presets import restore_files, apply_cover_presets
 from app.core.paths import ROOT_DIR, COVERS_DIR
@@ -56,7 +60,9 @@ async def lifespan(app: FastAPI):
     # === Migrations + 一次性 seed ===
     await apply_migrations()
     await run_seed()
-    await seed_model_cards()
+    await seed_image_models()
+    await openai_images.fail_orphans()
+    media.ensure_dirs()
     await apply_cover_presets()
 
     # === 載入 DB settings 到 in-memory 快取 ===
@@ -110,6 +116,9 @@ app.include_router(admin_rh.router)
 app.include_router(tasks.router)
 app.include_router(proxy.router)
 app.include_router(models.router)
+app.include_router(admin_models.router)
+app.include_router(templates.router)
+app.include_router(prompt.router)
 
 
 # ===== 靜態檔案 =====

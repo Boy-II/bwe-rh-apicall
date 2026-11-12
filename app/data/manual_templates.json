@@ -1,0 +1,18 @@
+[
+  {
+    "sourceId": "neek:figure",
+    "title": "插畫轉真實手辦",
+    "prompt": "turn this photo into a character figure. Behind it, place a box with the character’s image printed on it, and a computer showing the Blender modeling process on its screen. In front of the box, add a round plastic base with the character figure standing on it. Make the PVC material look clear, and set the scene indoors if possible.",
+    "promptAlt": "将这张照片转化为角色手办模型。背景放置一个印有角色图案的包装盒，盒旁摆放一台电脑，屏幕显示 Blender 建模界面。模型前方配圆形塑料展示底座，确保 PVC 材质通透感。建议采用室内场景布光。",
+    "image": "manual_templates/figure.jpg",
+    "category": "creative",
+    "model": "Gemini"
+  },
+  {
+    "sourceId": "neek:podcast-cover",
+    "title": "播客封面字體設計",
+    "prompt": "黑色背景，白色字，创意字体设计，流畅且富有艺术感，“Sam解释 GPT-5 发布问题”，设计灵感：将字体进行抽象变形，给人以强烈的视觉冲击。最后一个字着重表现，高级感，扁平化，大师作品。",
+    "image": "manual_templates/podcast-cover.png",
+    "category": "poster-banner"
+  }
+]

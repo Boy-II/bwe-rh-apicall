@@ -40,6 +40,8 @@ _ENV_AI_BASE_URL = os.environ.get("AI_BASE_URL", "")
 _ENV_AI_API_KEY = os.environ.get("AI_API_KEY", "")
 _ENV_AI_MODEL = os.environ.get("AI_MODEL", "")
 _ENV_JWT_SECRET = os.environ.get("JWT_SECRET", "")
+_ENV_OPENAI_IMAGE_BASE_URL = os.environ.get("OPENAI_IMAGE_BASE_URL", "")
+_ENV_OPENAI_IMAGE_API_KEY = os.environ.get("OPENAI_IMAGE_API_KEY", "")
 
 # DB-backed settings 的 in-memory 快取（lifespan 啟動時載入）
 _db_settings: dict[str, str] = {}
@@ -98,3 +100,14 @@ def has_env_jwt_secret() -> bool:
 
 def has_env_ai_api_key() -> bool:
     return bool(_ENV_AI_API_KEY)
+
+
+# ===== OpenAI 格式圖片路由（OmniRoute）=====
+
+
+def get_openai_image_base_url() -> str:
+    return (_ENV_OPENAI_IMAGE_BASE_URL or get_db_setting("openai_image_base_url")).rstrip("/")
+
+
+def get_openai_image_api_key() -> str:
+    return _ENV_OPENAI_IMAGE_API_KEY or get_db_setting("openai_image_api_key")

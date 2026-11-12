@@ -48,6 +48,31 @@ cards.push(
     cardType: 'webapp',
   },
 );
+const DISPLAY = {
+  'gemini-pro-text': 'Gemini Pro',
+  'gemini-pro-image': 'Gemini Pro',
+  'gpt-image-2-text': 'GPT Image 2',
+  'gpt-image-2-image': 'GPT Image 2',
+};
+const imageModels = catalog
+  .filter((m) => DISPLAY[m.key])
+  .map((m) => ({ key: m.key, displayName: DISPLAY[m.key], mode: m.mode, provider: 'runninghub', profile: m.profile, params: m.params }));
+const template = {
+  id: 'tpl1',
+  title: '夏日海報',
+  categoryId: 'poster-banner',
+  tags: ['海報'],
+  mode: 't2i',
+  thumbUrl: '/covers/proxy-check.png',
+  imageUrl: '/covers/proxy-check.png',
+  favorited: false,
+  canEdit: true,
+  modelLabel: 'Gemini',
+  promptEn: 'A summer poster with bold title "SALE"',
+  promptZh: '',
+  suggestedModel: '',
+  createdBy: null,
+};
 let browser, server, mediaBackend;
 const coverBytes = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
@@ -134,30 +159,85 @@ async function pageFixture(handler) {
         allowedDivisions: ['健康事業處'],
         lastSync: null,
       };
-    else if (path.startsWith('/api/models/')) body = catalog.find((m) => path.endsWith(m.key));
+    else if (path === '/api/image-models') body = imageModels;
+    else if (path === '/api/template-categories')
+      body = [{ id: 'poster-banner', name: '海報・Banner', count: 1 }];
+    else if (path === '/api/template-tags') body = [{ tag: '海報', count: 1 }];
+    else if (path === '/api/templates') body = { items: [template], total: 1, nextOffset: null };
+    else if (path === '/api/templates/tpl1') body = template;
     else body = {};
     await route.fulfill({ json: body });
   });
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   await page.goto(origin);
-  await page.getByRole('navigation', { name: '應用分類' }).waitFor();
+  await page.getByRole('heading', { name: '提示詞庫' }).waitFor();
   return { page, context };
 }
 
-test('category filters and image modes show only the matching cards', async () => {
+async function openGenerate(page) {
+  await page.getByRole('navigation', { name: '主選單' }).getByRole('button', { name: 'AI 生圖' }).click();
+  await page.getByRole('heading', { name: 'AI 生圖' }).waitFor();
+}
+
+async function openApps(page) {
+  await page.getByRole('navigation', { name: '主選單' }).getByRole('button', { name: 'AI 應用' }).click();
+  await page.getByRole('heading', { name: 'AI 應用' }).waitFor();
+}
+
+test('gallery template opens the generate page and inserts its prompt', async () => {
   const { page, context } = await pageFixture();
   try {
-    await page.getByRole('button', { name: '圖片', exact: true }).click();
-    await page.getByRole('button', { name: '圖生圖', exact: true }).click();
-    assert.equal(await page.locator('h3').count(), 5);
-    assert.equal(await page.getByRole('button', { name: '拖曳排序' }).count(), 0);
-    await page.getByRole('button', { name: '音源', exact: true }).click();
-    assert.equal(await page.locator('h3').count(), 1);
-    assert.equal(await page.locator('h3').textContent(), '音源測試');
-    await page.getByRole('button', { name: '圖片', exact: true }).click();
-    await page.getByRole('button', { name: '文生圖', exact: true }).click();
-    await page.screenshot({ path: '/tmp/rhapi-categories.png', fullPage: true });
+    assert.equal(await page.getByLabel('使用模型：Gemini').count(), 1);
+    await page.getByRole('button', { name: /夏日海報/ }).click();
+    const card = page.getByRole('region', { name: '範本' });
+    await card.waitFor();
+    assert.equal(await card.getByRole('button', { name: '帶入' }).count(), 1);
+    assert.equal(await card.getByRole('button', { name: '產生' }).count(), 1);
+    await card.getByRole('button', { name: '帶入' }).click();
+    assert.equal(await page.getByLabel('提示詞').inputValue(), template.promptEn);
+    await page.screenshot({ path: '/tmp/rhapi-generate.png', fullPage: true });
+  } finally {
+    await context.close();
+  }
+});
+
+test('admin adds a template with prompt and dropped image', async () => {
+  let posted = null;
+  const { page, context } = await pageFixture(async (route, path) => {
+    if (path === '/api/admin/templates' && route.request().method() === 'POST') {
+      posted = route.request().postData() || '';
+      await route.fulfill({ json: { ...template, id: 'new1', title: 'AI 標題' } });
+      return true;
+    }
+  });
+  try {
+    await page.getByRole('navigation', { name: '主選單' }).locator('..').getByRole('button', { name: '新增範本' }).click();
+    await page.getByRole('heading', { name: '新增範本' }).waitFor();
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 8;
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await page.locator('input[type=file]').setInputFiles({ name: 'x.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await page.getByAltText('示例圖片預覽').waitFor();
+    await page.getByLabel('中文提示詞').fill('一張夏日海報');
+    await page.getByRole('button', { name: '新增到提示詞庫' }).click();
+    await page.getByText('已新增「AI 標題」').waitFor();
+    assert.ok(posted.includes('一張夏日海報'));
+    assert.ok(posted.includes('name="file"'));
+  } finally {
+    await context.close();
+  }
+});
+
+test('AI apps page has no category switch and lists app cards', async () => {
+  const { page, context } = await pageFixture();
+  try {
+    await openApps(page);
+    assert.equal(await page.getByRole('navigation', { name: '應用分類' }).count(), 0);
+    assert.ok((await page.locator('h3').count()) > 0);
   } finally {
     await context.close();
   }
@@ -212,19 +292,20 @@ test('dynamic upload can remove a pending image without late response resurrecti
     }
   });
   try {
-    await page.getByRole('button', { name: /全能图片PRO（Gemini Pro） · 圖生圖/ }).click();
+    await openGenerate(page);
+    await page.getByLabel('提示詞').fill('cat');
     const png = await page.evaluate(() => {
       const c = document.createElement('canvas');
       c.width = 64;
       c.height = 64;
       return c.toDataURL('image/png').split(',')[1];
     });
-    await page.locator('main input[type=file]').setInputFiles([
+    await page.locator('input[type=file]').setInputFiles([
       { name: 'a.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') },
       { name: 'b.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') },
     ]);
     await page.getByRole('button', { name: '移除參考圖片 2' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: '送出任務' }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: '立即生成' }).isDisabled(), true);
     await page.getByRole('button', { name: '移除參考圖片 1' }).click();
     release();
     await page.getByText('已上傳', { exact: true }).waitFor();
@@ -261,12 +342,13 @@ test('assistant model target and MOSS compilation produce an applicable prompt',
     }
   });
   try {
+    await openApps(page);
     await page.getByRole('button', { name: '開啟 AI 助手' }).click();
     await page.getByLabel('提示詞目標').selectOption('moss-image');
     await page.getByRole('button', { name: '生成提示詞', exact: true }).click();
     await page.locator('aside textarea').press('Enter');
     await page.getByText('畫布需設為 1024 × 1024 px；請確認工作流尺寸一致。').waitFor();
-    assert.ok((await page.locator('aside').textContent()).includes('abs_centralized'));
+    assert.ok((await page.locator('aside', { hasText: 'AI 助手' }).textContent()).includes('abs_centralized'));
   } finally {
     await context.close();
   }
@@ -290,15 +372,15 @@ test('removing an uploaded image never submits a generation form', async () => {
     }
   });
   try {
-    await page.getByRole('button', { name: /全能图片PRO（Gemini Pro） · 圖生圖/ }).click();
-    await page.getByLabel('提示詞 *').fill('保持杯子外型，只修改背景');
+    await openGenerate(page);
+    await page.getByLabel('提示詞').fill('保持杯子外型，只修改背景');
     const png = await page.evaluate(() => {
       const c = document.createElement('canvas');
       c.width = 64;
       c.height = 64;
       return c.toDataURL('image/png').split(',')[1];
     });
-    await page.locator('main input[type=file]').setInputFiles([
+    await page.locator('input[type=file]').setInputFiles([
       { name: 'a.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') },
       { name: 'b.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') },
     ]);
@@ -355,7 +437,7 @@ test('history retrieves completed outputs from a task whose polling was stopped'
     }
   });
   try {
-    await page.getByRole('button', { name: '我的歷史', exact: true }).click();
+    await page.getByRole('navigation', { name: '主選單' }).getByRole('button', { name: '生成紀錄' }).click();
     await page.getByRole('button', { name: '更新任務狀態', exact: true }).click();
     await page.getByRole('link', { name: '下載', exact: true }).waitFor();
     assert.equal(completed, true);
@@ -376,6 +458,7 @@ test('MOSS draft inside an ordinary prompt fence cannot bypass compilation', asy
     }
   });
   try {
+    await openApps(page);
     await page.getByRole('button', { name: '開啟 AI 助手' }).click();
     await page.getByLabel('提示詞目標').selectOption('moss-image');
     await page.getByRole('button', { name: '生成提示詞', exact: true }).click();

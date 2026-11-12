@@ -13,14 +13,16 @@ interface Item {
   size?: string;
 }
 interface Props {
-  cardId: string;
+  modelKey: string;
   param: ModelParam;
   initial: string[];
   disabled: boolean;
   onChange: (urls: string[], busy: boolean) => void;
+  /** 啟用拖曳放入與貼上圖片（生成頁用） */
+  dropzone?: boolean;
 }
 
-export function MultiImageInput({ cardId, param, initial, disabled, onChange }: Props) {
+export function MultiImageInput({ modelKey, param, initial, disabled, onChange, dropzone }: Props) {
   const [items, setItems] = useState<Item[]>(() =>
     initial.map((url) => ({ id: crypto.randomUUID(), preview: url, url })),
   );
@@ -62,7 +64,7 @@ export function MultiImageInput({ cardId, param, initial, disabled, onChange }: 
         preview,
         size: `${prepared.width} × ${prepared.height} · ${(prepared.file.size / 1024).toFixed(0)} KB`,
       });
-      const result = await api.models.upload(cardId, param.fieldKey, prepared.file);
+      const result = await api.models.upload(modelKey, param.fieldKey, prepared.file);
       // Removed rows stay removed even if their network response arrives later.
       update(item.id, { url: result.url });
     } catch (e) {
@@ -84,8 +86,36 @@ export function MultiImageInput({ cardId, param, initial, disabled, onChange }: 
     })();
     if (input.current) input.current.value = '';
   };
+  const addRef = useRef(add);
+  addRef.current = add;
+  useEffect(() => {
+    if (!dropzone) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = e.clipboardData?.files;
+      if (!disabled && files && files.length && Array.from(files).some((f) => f.type.startsWith('image/'))) {
+        e.preventDefault();
+        addRef.current(files);
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [dropzone, disabled]);
   return (
-    <div className="space-y-3">
+    <div
+      className={'space-y-3' + (dropzone ? ' rounded-lg border border-dashed border-border p-3' : '')}
+      onDragOver={dropzone ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        dropzone
+          ? (e) => {
+              e.preventDefault();
+              if (!disabled) add(e.dataTransfer.files);
+            }
+          : undefined
+      }
+    >
+      {dropzone && (
+        <p className="text-xs text-muted-foreground">可拖曳圖片到這裡，或直接貼上（Ctrl/⌘+V）</p>
+      )}
       <p className="text-xs text-muted-foreground">
         {items.length} / {limit} 張 · 自動等比縮圖至長邊 1024 px，PNG 保留透明度 · 每張最多{' '}
         {param.maxSize || 10} MB

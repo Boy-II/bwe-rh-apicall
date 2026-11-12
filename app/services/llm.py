@@ -223,3 +223,60 @@ async def fetch_models(
         raise HTTPException(status_code=504, detail="模型列表請求逾時")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"無法取得模型列表: {e}")
+
+
+# ===== 單次文字完成（提示詞工具、匯入用）=====
+
+
+async def complete(system: str, user: str, *, json_mode: bool = False, timeout: float = 60) -> str:
+    """單輪 system+user 完成；沿用 AI 設定（OpenAI 相容優先，否則 Gemini）。"""
+    from app.services import runninghub
+
+    http_client = runninghub.client()
+    ai_base = config.get_ai_base_url().rstrip("/")
+    ai_key = config.get_ai_api_key()
+    ai_model = config.get_ai_model()
+    try:
+        if ai_base and ai_key and ai_model:
+            payload = {
+                "model": ai_model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.3,
+            }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
+            resp = await http_client.post(
+                f"{ai_base}/v1/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {ai_key}"},
+                timeout=timeout,
+            )
+            data = resp.json()
+            if not resp.is_success:
+                msg = (data.get("error") or {}).get("message") or f"HTTP {resp.status_code}"
+                raise HTTPException(status_code=502, detail=f"AI 請求失敗：{msg}")
+            return data["choices"][0]["message"]["content"]
+        if config.GEMINI_API_KEY:
+            body = {
+                "system_instruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": [{"text": user}]}],
+                "generationConfig": {"temperature": 0.3},
+            }
+            if json_mode:
+                body["generationConfig"]["responseMimeType"] = "application/json"
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
+            )
+            resp = await http_client.post(url, json=body, timeout=timeout)
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="AI 請求逾時") from None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI 請求失敗：{e}") from None
+    raise HTTPException(status_code=503, detail="AI 未設定，請在管理介面配置 AI 設定")

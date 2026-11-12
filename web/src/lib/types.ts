@@ -90,6 +90,7 @@ export interface Card {
   editableFields: EditableField[];
   instanceType: InstanceType;
   maxDurationSeconds: number; // 0 = 用全域預設（10 分鐘）
+  hidden?: boolean; // 管理員才看得到；true = 對一般使用者隱藏
   enableMaskEditor: boolean; // 啟用後第一個 IMAGE 為來源、第二個為 mask（user 端隱藏 mask 欄位）
   sortOrder?: number;
   createdAt?: string;
@@ -267,11 +268,65 @@ export interface ModelParam {
   accept?: string;
   maxSize?: number;
 }
-export interface ModelSchema {
+
+// ===== 生圖模型清單與範本庫 =====
+export interface ImageModel {
   key: string;
-  title: string;
-  profile: PromptProfile;
-  mode: ImageMode;
-  endpoint: string;
+  displayName: string;
+  mode: 'text-to-image' | 'image-to-image';
+  provider: 'runninghub' | 'openai';
+  profile: string;
   params: ModelParam[];
+}
+export interface AdminImageModel extends ImageModel {
+  upstream: string;
+  enabled: boolean;
+  sortOrder: number;
+}
+export type TemplateMode = 't2i' | 'i2i' | 'edit';
+export type ModelLabel = '' | 'Gemini' | 'GPT' | 'Grok' | 'ComfyUI';
+export const MODEL_LABELS: ModelLabel[] = ['Gemini', 'GPT', 'Grok', 'ComfyUI'];
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  categoryId: string | null;
+  tags: string[];
+  mode: TemplateMode;
+  thumbUrl: string;
+  imageUrl: string;
+  favorited: boolean;
+  canEdit: boolean;
+  modelLabel: ModelLabel;
+}
+export interface TemplateDetail extends TemplateSummary {
+  promptEn: string;
+  promptZh: string;
+  suggestedModel: string;
+  createdBy: string | null;
+}
+export interface TemplateCategory {
+  id: string;
+  name: string;
+  count: number;
+}
+export interface TemplatePage {
+  items: TemplateSummary[];
+  total: number;
+  nextOffset: number | null;
+}
+export interface TemplateMeta {
+  title: string;
+  categoryId: string;
+  tags: string[];
+  mode: TemplateMode;
+}
+export interface SaveTemplateBody {
+  taskId: string;
+  resultIndex: number;
+  title: string;
+  categoryId: string | null;
+  tags: string[];
+  mode: TemplateMode;
+  promptEn: string;
+  promptZh: string;
 }

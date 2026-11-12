@@ -245,6 +245,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : undefined,
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
+          hidden: !!form.hidden,
         });
         toast.success('卡片已更新');
       } else {
@@ -563,6 +564,16 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
               TIMEOUT。
             </p>
           </div>
+          {isEdit && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!form.hidden}
+                onChange={(e) => set('hidden', e.target.checked)}
+              />
+              對使用者隱藏（只有管理員看得到）
+            </label>
+          )}
 
           {form.cardType === 'workflow' && (
             <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
