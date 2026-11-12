@@ -23,8 +23,8 @@ class ImageRegistryTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         rows = await db.fetch_all(
             "SELECT key, provider, upstream, display_name FROM image_models ORDER BY sort_order"
         )
+        rows = [r for r in rows if r["provider"] == "runninghub"]
         self.assertEqual([r["key"] for r in rows], KEEP)
-        self.assertTrue(all(r["provider"] == "runninghub" for r in rows))
         catalog = {
             m["key"]: m
             for m in json.loads(
@@ -37,6 +37,24 @@ class ImageRegistryTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
             [r["display_name"] for r in rows],
             ["Gemini Pro", "Gemini Pro", "Gemini Flash", "Gemini Flash", "GPT Image 2", "GPT Image 2"],
         )
+
+    async def test_openai_presets_seeded_disabled_once(self):
+        await image_registry.seed_image_models()
+        rows = await db.fetch_all(
+            "SELECT key, provider, upstream, enabled, mode FROM image_models WHERE provider='openai' ORDER BY key"
+        )
+        self.assertEqual(
+            [(r["key"], r["upstream"], r["enabled"], r["mode"]) for r in rows],
+            [
+                ("omni-gemini-flash-image-edit", "antigravity/gemini-3.1-flash-image", False, "image-to-image"),
+                ("omni-gemini-flash-image-text", "antigravity/gemini-3.1-flash-image", False, "text-to-image"),
+            ],
+        )
+        await db.execute("UPDATE image_models SET enabled=TRUE WHERE provider='openai'")
+        await image_registry.seed_image_models()
+        self.assertTrue(all(r["enabled"] for r in await db.fetch_all("SELECT enabled FROM image_models WHERE provider='openai'")))
+        m = await image_registry.get("omni-gemini-flash-image-edit")
+        self.assertEqual([p["fieldKey"] for p in m["params"]], ["prompt", "image", "size"])
 
     async def test_get_and_list_shape(self):
         await image_registry.seed_image_models()

@@ -6,6 +6,7 @@ from pathlib import Path
 from app.core import db
 
 _CATALOG_PATH = Path(__file__).parents[1] / "data/image_models.json"
+_OMNIROUTE_PATH = Path(__file__).parents[1] / "data/omniroute_models.json"
 
 # 只保留這些 RunningHub 模型（不含 Midjourney、Seedream）
 KEEP_KEYS = [
@@ -48,6 +49,19 @@ async def seed_image_models() -> None:
             m["profile"],
             m["params"],
             order,
+        )
+    # OmniRoute 預設模型：先停用，管理員設定好路由後再啟用；已存在則不覆寫
+    for m in json.loads(_OMNIROUTE_PATH.read_text())["models"]:
+        await db.execute(
+            """INSERT INTO image_models(key, display_name, mode, provider, upstream, profile, params, enabled, sort_order)
+            VALUES($1,$2,$3,'openai',$4,$5,$6,FALSE,$7) ON CONFLICT(key) DO NOTHING""",
+            m["key"],
+            m["displayName"],
+            m["mode"],
+            m["upstream"],
+            m["profile"],
+            m["params"],
+            m["sortOrder"],
         )
 
 

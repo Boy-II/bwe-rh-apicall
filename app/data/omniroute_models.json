@@ -1,0 +1,38 @@
+{
+  "note": "OmniRoute（OpenAI 格式）預設模型。2026-11-12 實測：antigravity/gemini-3.1-flash-image 的 /v1/images/generations 與 /v1/images/edits 皆回傳 b64_json；size 會依比例對應 Gemini 原生尺寸（1536x1024 → 1264x848）。codex/gpt-image-2 目前 OmniRoute 回 'No credentials for image provider: codex'，待補憑證後可比照新增。",
+  "models": [
+    {
+      "key": "omni-gemini-flash-image-text",
+      "displayName": "Gemini 3.1 Flash Image（OmniRoute）",
+      "mode": "text-to-image",
+      "upstream": "antigravity/gemini-3.1-flash-image",
+      "profile": "gemini-flash",
+      "sortOrder": 10,
+      "params": [
+        {"fieldKey": "prompt", "type": "STRING", "required": true, "maxLength": 20000},
+        {"fieldKey": "size", "type": "LIST", "required": false, "defaultValue": "1024x1024", "options": [
+          {"value": "1024x1024", "description": "方形 1:1"},
+          {"value": "1536x1024", "description": "橫式 3:2"},
+          {"value": "1024x1536", "description": "直式 2:3"}
+        ]}
+      ]
+    },
+    {
+      "key": "omni-gemini-flash-image-edit",
+      "displayName": "Gemini 3.1 Flash Image（OmniRoute）",
+      "mode": "image-to-image",
+      "upstream": "antigravity/gemini-3.1-flash-image",
+      "profile": "gemini-flash",
+      "sortOrder": 11,
+      "params": [
+        {"fieldKey": "prompt", "type": "STRING", "required": true, "maxLength": 20000},
+        {"fieldKey": "image", "type": "IMAGE", "required": true, "multipleInputs": true, "maxInputNum": 4, "accept": "[\"JPG\",\"JPEG\",\"PNG\",\"WEBP\"]", "maxSize": 10},
+        {"fieldKey": "size", "type": "LIST", "required": false, "defaultValue": "1024x1024", "options": [
+          {"value": "1024x1024", "description": "方形 1:1"},
+          {"value": "1536x1024", "description": "橫式 3:2"},
+          {"value": "1024x1536", "description": "直式 2:3"}
+        ]}
+      ]
+    }
+  ]
+}
