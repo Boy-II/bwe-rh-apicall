@@ -17,7 +17,7 @@ from app.schemas import (
     TaskQueryRequest,
     WorkflowFormatRequest,
 )
-from app.services import llm, runninghub, model_api
+from app.services import llm, runninghub, model_api, openai_images
 from app.services import model_catalog, moss_layout
 from pydantic import BaseModel
 
@@ -249,6 +249,8 @@ async def submit_task(
 async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require_user)):
     """取消執行中任務。"""
     task = await _owned_task(req.taskId, user_id)
+    if task["provider"] == "openai":
+        return await openai_images.cancel(task)
     if task["card_type"] == "model":
         raise HTTPException(
             status_code=400, detail="此標準模型未提供取消 API；停止等待不會取消上游任務"
@@ -280,6 +282,8 @@ async def query_task_outputs(
     req: TaskQueryRequest, user_id: str = Depends(auth.require_user)
 ):
     task = await _owned_task(req.taskId, user_id)
+    if task["provider"] == "openai":
+        return await openai_images.query(task)
     if task["card_type"] == "model":
         data = await model_api.query(req.taskId)
         status = data.get("status") or data.get("taskStatus") or ""

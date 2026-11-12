@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 
 from app.core import auth, db
 from app.core.rate_limit import rate_limit
-from app.services import image_registry, media, model_api, model_catalog
+from app.services import image_registry, media, model_api, model_catalog, openai_images
 
 router = APIRouter()
 
@@ -126,6 +126,8 @@ async def submit_model(req: ModelSubmit, user_id: str = Depends(auth.require_use
         {"nodeId": model["key"], "fieldName": k, "fieldValue": v} for k, v in payload.items()
     ]
     raw = {"templateId": req.templateId} if req.templateId else {}
+    if model["provider"] == "openai":
+        return await openai_images.submit(local_id, user_id, model, payload, inputs, raw)
     # 先建本地紀錄：上游任務絕不能沒有歸屬
     await db.execute(
         """INSERT INTO tasks(id,user_id,card_id,card_title,card_type,webapp_id,rh_task_id,status,node_input,model_key,provider,raw_response)
