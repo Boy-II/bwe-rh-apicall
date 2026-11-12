@@ -13,14 +13,14 @@ interface Item {
   size?: string;
 }
 interface Props {
-  cardId: string;
+  modelKey: string;
   param: ModelParam;
   initial: string[];
   disabled: boolean;
   onChange: (urls: string[], busy: boolean) => void;
 }
 
-export function MultiImageInput({ cardId, param, initial, disabled, onChange }: Props) {
+export function MultiImageInput({ modelKey, param, initial, disabled, onChange }: Props) {
   const [items, setItems] = useState<Item[]>(() =>
     initial.map((url) => ({ id: crypto.randomUUID(), preview: url, url })),
   );
@@ -62,7 +62,7 @@ export function MultiImageInput({ cardId, param, initial, disabled, onChange }: 
         preview,
         size: `${prepared.width} × ${prepared.height} · ${(prepared.file.size / 1024).toFixed(0)} KB`,
       });
-      const result = await api.models.upload(cardId, param.fieldKey, prepared.file);
+      const result = await api.models.upload(modelKey, param.fieldKey, prepared.file);
       // Removed rows stay removed even if their network response arrives later.
       update(item.id, { url: result.url });
     } catch (e) {

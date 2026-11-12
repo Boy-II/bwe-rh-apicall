@@ -1,7 +1,13 @@
 import type {
   AccountStatusData,
   AccessSettings,
-  ModelSchema,
+  AdminImageModel,
+  ImageModel,
+  SaveTemplateBody,
+  TemplateCategory,
+  TemplateDetail,
+  TemplateMeta,
+  TemplatePage,
   ModelValue,
   AiConfigResponse,
   AiConfigSavePayload,
@@ -21,6 +27,7 @@ import type {
   UserUsage,
   VerifyResponse,
 } from './types';
+import { templateQuery, type TemplateFilters } from './gallery-utils';
 
 class ApiError extends Error {
   status: number;
@@ -302,20 +309,149 @@ export const tasks = {
 // --- RunningHub proxy ---
 export const models = {
   schema: (key: string) =>
-    request<ModelSchema>(`/api/models/${encodeURIComponent(key)}`, { user: true }),
-  submit: (cardId: string, payload: Record<string, ModelValue>) =>
+    request<ImageModel>(`/api/models/${encodeURIComponent(key)}`, { user: true }),
+  submit: (modelKey: string, payload: Record<string, ModelValue>, templateId?: string) =>
     request<TaskSubmitData>('/api/models/submit', {
       method: 'POST',
       user: true,
-      body: json({ cardId, payload }),
+      body: json({ modelKey, payload, templateId }),
     }),
-  upload: (cardId: string, fieldKey: string, file: File) => {
+  upload: (modelKey: string, fieldKey: string, file: File) => {
     const fd = new FormData();
-    fd.append('cardId', cardId);
+    fd.append('modelKey', modelKey);
     fd.append('fieldKey', fieldKey);
     fd.append('file', file);
     return request<{ url: string }>('/api/models/upload', { method: 'POST', user: true, body: fd });
   },
+  resultDownloadUrl: (taskId: string, index: number) =>
+    `/api/models/tasks/${encodeURIComponent(taskId)}/results/${index}`,
+  /** 帶 token 取回結果圖並觸發瀏覽器下載。 */
+  download: async (taskId: string, index: number) => {
+    const res = await fetch(models.resultDownloadUrl(taskId, index), {
+      headers: userToken ? { 'X-User-Token': userToken } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status === 502 ? '結果圖片已無法取得' : `下載失敗（HTTP ${res.status}）`, res.status);
+    const name =
+      /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] ||
+      `bwe-${taskId}-${index}.png`;
+    const href = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  },
+};
+
+export const imageModels = {
+  list: () => request<ImageModel[]>('/api/image-models', { user: true }),
+};
+
+export const templates = {
+  list: (filters: TemplateFilters) =>
+    request<TemplatePage>(`/api/templates?${templateQuery(filters)}`, { user: true, admin: true }),
+  get: (id: string) =>
+    request<TemplateDetail>(`/api/templates/${encodeURIComponent(id)}`, { user: true, admin: true }),
+  categories: () => request<TemplateCategory[]>('/api/template-categories', { user: true }),
+  tags: (category = '') =>
+    request<{ tag: string; count: number }[]>(
+      `/api/template-tags${category ? `?category=${encodeURIComponent(category)}` : ''}`,
+      { user: true },
+    ),
+  favorite: (id: string, on: boolean) =>
+    request<{ favorited: boolean }>(`/api/templates/${encodeURIComponent(id)}/favorite`, {
+      method: on ? 'PUT' : 'DELETE',
+      user: true,
+    }),
+  save: (body: SaveTemplateBody) =>
+    request<TemplateDetail>('/api/templates', { method: 'POST', user: true, admin: true, body: json(body) }),
+  update: (id: string, body: Partial<Omit<SaveTemplateBody, 'taskId' | 'resultIndex'>>) =>
+    request<TemplateDetail>(`/api/templates/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      user: true,
+      admin: true,
+      body: json(body),
+    }),
+  remove: (id: string) =>
+    request<{ success: boolean }>(`/api/templates/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      user: true,
+      admin: true,
+    }),
+  fillLanguage: (id: string, lang: 'en' | 'zh') =>
+    request<{ text: string; generated: boolean }>(
+      `/api/templates/${encodeURIComponent(id)}/fill-language`,
+      { method: 'POST', user: true, body: json({ lang }) },
+    ),
+};
+
+export const prompt = {
+  optimize: (promptText: string, requestText: string, modelKey: string) =>
+    request<{ prompt: string }>('/api/prompt/optimize', {
+      method: 'POST',
+      user: true,
+      body: json({ prompt: promptText, request: requestText, modelKey }),
+    }),
+  suggestMeta: (promptText: string) =>
+    request<TemplateMeta>('/api/prompt/suggest-meta', {
+      method: 'POST',
+      user: true,
+      body: json({ prompt: promptText }),
+    }),
+};
+
+export const adminModels = {
+  list: () => request<AdminImageModel[]>('/api/admin/image-models', { admin: true }),
+  create: (m: AdminImageModel) =>
+    request<AdminImageModel>('/api/admin/image-models', { method: 'POST', admin: true, body: json(m) }),
+  update: (key: string, m: Partial<AdminImageModel>) =>
+    request<AdminImageModel>(`/api/admin/image-models/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      admin: true,
+      body: json(m),
+    }),
+  remove: (key: string) =>
+    request<{ success: boolean }>(`/api/admin/image-models/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+      admin: true,
+    }),
+  getRoute: () => request<{ baseUrl: string; hasApiKey: boolean }>('/api/admin/openai-route', { admin: true }),
+  saveRoute: (baseUrl: string, apiKey: string) =>
+    request<{ success: boolean }>('/api/admin/openai-route', {
+      method: 'POST',
+      admin: true,
+      body: json({ baseUrl, apiKey }),
+    }),
+  routeModels: () =>
+    request<{ models: string[] }>('/api/admin/openai-route/models', { method: 'POST', admin: true }),
+};
+
+export const adminTemplates = {
+  replaceImage: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<{ imageUrl: string; thumbUrl: string }>(
+      `/api/admin/templates/${encodeURIComponent(id)}/image`,
+      { method: 'POST', admin: true, body: fd },
+    );
+  },
+  createCategory: (id: string, name: string) =>
+    request<{ id: string }>('/api/admin/template-categories', {
+      method: 'POST',
+      admin: true,
+      body: json({ id, name }),
+    }),
+  updateCategory: (id: string, body: { name?: string; sortOrder?: number }) =>
+    request<{ success: boolean }>(`/api/admin/template-categories/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      admin: true,
+      body: json(body),
+    }),
+  deleteCategory: (id: string) =>
+    request<{ success: boolean }>(`/api/admin/template-categories/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      admin: true,
+    }),
 };
 
 export const proxy = {
@@ -440,6 +576,20 @@ export const proxy = {
   configStatus: () => request<ConfigStatus>('/api/config/status'),
 };
 
-export const api = { auth, cards, users, adminAi, adminRh, tasks, proxy, models };
+export const api = {
+  auth,
+  cards,
+  users,
+  adminAi,
+  adminRh,
+  tasks,
+  proxy,
+  models,
+  imageModels,
+  templates,
+  prompt,
+  adminModels,
+  adminTemplates,
+};
 export { ApiError };
 export default api;

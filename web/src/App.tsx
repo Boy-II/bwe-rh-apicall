@@ -4,7 +4,6 @@ import { useAuth } from '@/lib/auth-store';
 import { initTheme } from '@/lib/theme-store';
 import { LoginPanel } from '@/components/LoginPanel';
 import { HomePage } from '@/components/HomePage';
-import { ModelTaskView } from '@/components/ModelTaskView';
 import { TaskView } from '@/components/TaskView';
 import { TaskHistoryView } from '@/components/TaskHistoryView';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
@@ -52,20 +51,11 @@ function App() {
   return (
     <>
       {route.kind === 'task' ? (
-        route.card.cardType === 'model' ? (
-          <ModelTaskView
-            key={route.card.id}
-            card={route.card}
-            prefill={route.prefill}
-            onBack={() => setRoute({ kind: 'home' })}
-          />
-        ) : (
-          <TaskView
-            card={route.card}
-            prefill={route.prefill}
-            onBack={() => setRoute({ kind: 'home' })}
-          />
-        )
+        <TaskView
+          card={route.card}
+          prefill={route.prefill}
+          onBack={() => setRoute({ kind: 'home' })}
+        />
       ) : route.kind === 'history' ? (
         <TaskHistoryView
           onBack={() => setRoute({ kind: 'home' })}

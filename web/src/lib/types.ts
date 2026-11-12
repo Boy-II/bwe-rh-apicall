@@ -267,11 +267,62 @@ export interface ModelParam {
   accept?: string;
   maxSize?: number;
 }
-export interface ModelSchema {
+
+// ===== 生圖模型清單與範本庫 =====
+export interface ImageModel {
   key: string;
-  title: string;
-  profile: PromptProfile;
-  mode: ImageMode;
-  endpoint: string;
+  displayName: string;
+  mode: 'text-to-image' | 'image-to-image';
+  provider: 'runninghub' | 'openai';
+  profile: string;
   params: ModelParam[];
+}
+export interface AdminImageModel extends ImageModel {
+  upstream: string;
+  enabled: boolean;
+  sortOrder: number;
+}
+export type TemplateMode = 't2i' | 'i2i' | 'edit';
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  categoryId: string | null;
+  tags: string[];
+  mode: TemplateMode;
+  thumbUrl: string;
+  imageUrl: string;
+  favorited: boolean;
+  canEdit: boolean;
+}
+export interface TemplateDetail extends TemplateSummary {
+  promptEn: string;
+  promptZh: string;
+  suggestedModel: string;
+  createdBy: string | null;
+}
+export interface TemplateCategory {
+  id: string;
+  name: string;
+  count: number;
+}
+export interface TemplatePage {
+  items: TemplateSummary[];
+  total: number;
+  nextOffset: number | null;
+}
+export interface TemplateMeta {
+  title: string;
+  categoryId: string;
+  tags: string[];
+  mode: TemplateMode;
+}
+export interface SaveTemplateBody {
+  taskId: string;
+  resultIndex: number;
+  title: string;
+  categoryId: string | null;
+  tags: string[];
+  mode: TemplateMode;
+  promptEn: string;
+  promptZh: string;
 }
