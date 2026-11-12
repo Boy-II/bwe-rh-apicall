@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Heart, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Check, Heart, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import type { TemplateSummary } from '@/lib/types';
 
 const MODE_LABEL: Record<string, string> = { t2i: '文生圖', i2i: '圖生圖', edit: '圖生圖' };
@@ -10,13 +10,27 @@ interface Props {
   onToggleFavorite: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** 批次選取模式：有傳入時點卡片改為切換選取 */
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete }: Props) {
+export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete, selected, onToggleSelect }: Props) {
   const [menu, setMenu] = useState(false);
+  const selecting = !!onToggleSelect;
   return (
-    <div className="group relative mb-3 break-inside-avoid overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
+    <div
+      className={
+        'group relative mb-3 break-inside-avoid overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md ' +
+        (selected ? 'border-destructive ring-2 ring-destructive' : 'border-border')
+      }
+    >
+      <button
+        type="button"
+        onClick={selecting ? onToggleSelect : onOpen}
+        aria-pressed={selecting ? !!selected : undefined}
+        className="block w-full text-left"
+      >
         <img src={t.thumbUrl} alt={t.title} loading="lazy" className="block w-full bg-muted" />
         <div className="flex items-center gap-2 px-3 py-2">
           <span className="line-clamp-2 flex-1 text-sm font-medium">{t.title}</span>
@@ -38,7 +52,18 @@ export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete }: 
           {t.modelLabel}
         </span>
       )}
-      <div className="absolute right-2 top-2 flex gap-1">
+      {selecting && (
+        <span
+          aria-hidden
+          className={
+            'pointer-events-none absolute right-2 top-2 flex size-6 items-center justify-center rounded-full border-2 border-white shadow ' +
+            (selected ? 'bg-destructive text-white' : 'bg-black/30')
+          }
+        >
+          {selected && <Check className="size-4" />}
+        </span>
+      )}
+      <div className={'absolute right-2 top-2 flex gap-1 ' + (selecting ? 'hidden' : '')}>
         {t.canEdit && (onEdit || onDelete) && (
           <div className="relative">
             <button

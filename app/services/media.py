@@ -50,6 +50,18 @@ def local_path(url: str) -> Path | None:
     return MEDIA_DIR / m.group(1) / m.group(2)
 
 
+def delete_local(url: str) -> bool:
+    """刪除自有儲存的檔案；非自有 URL 或檔案不存在時回傳 False。"""
+    path = local_path(url)
+    if path is None:
+        return False
+    try:
+        path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def read_sync_local(url: str) -> bytes:
     path = local_path(url)
     if path is None or not path.is_file():

@@ -443,6 +443,12 @@ export const adminTemplates = {
       { method: 'POST', admin: true, body: fd },
     );
   },
+  batchDelete: (ids: string[]) =>
+    request<{ success: boolean; deleted: number }>('/api/admin/templates/batch-delete', {
+      method: 'POST',
+      admin: true,
+      body: json({ ids }),
+    }),
   createCategory: (id: string, name: string) =>
     request<{ id: string }>('/api/admin/template-categories', {
       method: 'POST',

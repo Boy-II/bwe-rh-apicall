@@ -344,11 +344,46 @@ async def update_template(
     return detail(await fetch_detail(template_id, user_id), user_id, admin)
 
 
+async def _remove_unused_images(urls: list[str]) -> None:
+    """刪除已沒有任何範本引用的圖片檔。"""
+    urls = sorted({u for u in urls if u})
+    if not urls:
+        return
+    used = await db.fetch_all(
+        "SELECT image_url AS u FROM templates WHERE image_url = ANY($1::text[]) "
+        "UNION SELECT thumb_url FROM templates WHERE thumb_url = ANY($1::text[])",
+        urls,
+    )
+    still_used = {r["u"] for r in used}
+    for url in urls:
+        if url not in still_used:
+            media.delete_local(url)
+
+
+async def delete_templates(ids: list[str]) -> int:
+    """刪除範本並一併刪除其圖片與縮圖，回傳實際刪除筆數。"""
+    rows = await db.fetch_all(
+        "DELETE FROM templates WHERE id = ANY($1::text[]) RETURNING image_url, thumb_url", ids
+    )
+    await _remove_unused_images([u for r in rows for u in (r["image_url"], r["thumb_url"])])
+    return len(rows)
+
+
 @router.delete("/api/templates/{template_id}")
 async def delete_template(template_id: str, request: Request, user_id: str = Depends(auth.require_user)):
     await _editable(template_id, request, user_id)
-    await db.execute("DELETE FROM templates WHERE id=$1", template_id)
+    await delete_templates([template_id])
     return {"success": True}
+
+
+class BatchDeleteBody(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+
+
+@router.post("/api/admin/templates/batch-delete")
+async def batch_delete_templates(body: BatchDeleteBody, _: str = Depends(auth.require_admin)):
+    deleted = await delete_templates(list(dict.fromkeys(body.ids)))
+    return {"success": True, "deleted": deleted}
 
 
 # ===== 管理員：換圖、分類 =====
@@ -366,7 +401,8 @@ class CategoryPatch(BaseModel):
 
 @router.post("/api/admin/templates/{template_id}/image")
 async def replace_image(template_id: str, file: UploadFile = File(...), _: str = Depends(auth.require_admin)):
-    if not await db.fetch_val("SELECT 1 FROM templates WHERE id=$1", template_id):
+    old = await db.fetch_one("SELECT image_url, thumb_url FROM templates WHERE id=$1", template_id)
+    if not old:
         raise HTTPException(status_code=404, detail="範本不存在")
     content = await file.read(20 * 1024 * 1024 + 1)
     if len(content) > 20 * 1024 * 1024:
@@ -376,6 +412,7 @@ async def replace_image(template_id: str, file: UploadFile = File(...), _: str =
         "UPDATE templates SET image_url=$2, thumb_url=$3, updated_at=NOW() WHERE id=$1",
         template_id, image_url, thumb_url,
     )
+    await _remove_unused_images([old["image_url"], old["thumb_url"]])
     return {"imageUrl": image_url, "thumbUrl": thumb_url}
 
 

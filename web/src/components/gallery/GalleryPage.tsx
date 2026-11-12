@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Search, X } from 'lucide-react';
+import { CheckSquare, Search, Trash2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
+import { useAuth } from '@/lib/auth-store';
 import type { TemplateCategory, TemplateSummary } from '@/lib/types';
 import { TemplateTile } from './TemplateTile';
 import { TemplateFilters } from './TemplateFilters';
@@ -24,6 +26,10 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
   const [total, setTotal] = useState(0);
   const [nextOffset, setNextOffset] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
+  const isAdmin = useAuth((s) => !!s.user?.isAdmin);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const generation = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
 
@@ -58,6 +64,7 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
 
   useEffect(() => {
     setItems([]);
+    setSelected(new Set());
     load(0, true);
   }, [load, refreshKey]);
 
@@ -95,6 +102,42 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
     }
   };
 
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const exitSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const allLoadedSelected = items.length > 0 && items.every((t) => selected.has(t.id));
+  const toggleSelectAll = () =>
+    setSelected(allLoadedSelected ? new Set() : new Set(items.map((t) => t.id)));
+
+  const removeSelected = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`確定刪除選取的 ${ids.length} 個範本？圖片會一併刪除，無法復原。`)) return;
+    setDeleting(true);
+    try {
+      const res = await api.adminTemplates.batchDelete(ids);
+      const gone = new Set(ids);
+      setItems((prev) => prev.filter((x) => !gone.has(x.id)));
+      setTotal((n) => Math.max(0, n - res.deleted));
+      toast.success(`已刪除 ${res.deleted} 個範本`);
+      exitSelecting();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -117,6 +160,28 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
           )}
         </div>
       </div>
+      {isAdmin && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {selecting ? (
+            <>
+              <span className="text-sm text-muted-foreground">已選取 {selected.size} 個</span>
+              <Button size="sm" variant="outline" onClick={toggleSelectAll} disabled={items.length === 0}>
+                {allLoadedSelected ? '取消全選' : '全選已載入'}
+              </Button>
+              <Button size="sm" variant="destructive" onClick={removeSelected} disabled={selected.size === 0 || deleting}>
+                <Trash2 /> {deleting ? '刪除中…' : `刪除選取 (${selected.size})`}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={exitSelecting} disabled={deleting}>
+                取消
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setSelecting(true)}>
+              <CheckSquare /> 批次刪除
+            </Button>
+          )}
+        </div>
+      )}
       <div className="mb-5">
         <TemplateFilters
           categories={categories}
@@ -142,6 +207,8 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
               onToggleFavorite={() => toggleFavorite(t)}
               onEdit={onEdit ? () => onEdit(t.id, () => load(0, true)) : undefined}
               onDelete={() => remove(t)}
+              selected={selected.has(t.id)}
+              onToggleSelect={selecting ? () => toggleSelect(t.id) : undefined}
             />
           ))}
         </div>

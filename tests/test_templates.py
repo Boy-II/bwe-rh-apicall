@@ -237,6 +237,44 @@ class TemplateManageTests(TemplatesBase):
         self.assertEqual((await self.client.delete("/api/templates/theirs")).status_code, 200)
         self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 0)
 
+    async def _template_with_files(self, tid, created_by=None):
+        img = media.save_bytes("templates", png(), "png")
+        thumb = media.make_thumbnail(img)
+        await add_template(tid, created_by=created_by)
+        await db.execute("UPDATE templates SET image_url=$2, thumb_url=$3 WHERE id=$1", tid, img, thumb)
+        return media.local_path(img), media.local_path(thumb)
+
+    async def test_delete_removes_image_files(self):
+        img, thumb = await self._template_with_files("mine", created_by="u1")
+        self.assertTrue(img.is_file() and thumb.is_file())
+        self.assertEqual((await self.client.delete("/api/templates/mine")).status_code, 200)
+        self.assertFalse(img.exists() or thumb.exists())
+
+    async def test_delete_keeps_files_still_used_by_other_template(self):
+        img, thumb = await self._template_with_files("a", created_by="u1")
+        await add_template("b")
+        await db.execute("UPDATE templates SET image_url=(SELECT image_url FROM templates WHERE id='a') WHERE id='b'")
+        self.assertEqual((await self.client.delete("/api/templates/a")).status_code, 200)
+        self.assertTrue(img.is_file())
+        self.assertFalse(thumb.exists())
+
+    async def test_admin_batch_delete_removes_rows_and_files(self):
+        files = [await self._template_with_files(t) for t in ("a", "b")]
+        await add_template("keep")
+        res = await self.client.post("/api/admin/templates/batch-delete", json={"ids": ["a", "b", "a", "missing"]})
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual(res.json()["deleted"], 2)
+        self.assertEqual(await db.fetch_val("SELECT array_agg(id) FROM templates"), ["keep"])
+        self.assertFalse(any(p.exists() for pair in files for p in pair))
+        self.assertEqual((await self.client.post("/api/admin/templates/batch-delete", json={"ids": []})).status_code, 422)
+
+    async def test_admin_batch_delete_requires_admin(self):
+        del self.app.dependency_overrides[auth.require_admin]
+        await add_template("a")
+        res = await self.client.post("/api/admin/templates/batch-delete", json={"ids": ["a"]})
+        self.assertIn(res.status_code, (401, 403))
+        self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 1)
+
     async def test_delete_category_nulls_templates(self):
         res = await self.client.post("/api/admin/template-categories", json={"id": "food", "name": "食品"})
         self.assertEqual(res.status_code, 200, res.text)
@@ -250,9 +288,10 @@ class TemplateManageTests(TemplatesBase):
         self.assertEqual((await self.client.post("/api/admin/template-categories", json={"id": "Bad Id", "name": "x"})).status_code, 400)
 
     async def test_admin_replace_image(self):
-        await add_template("a")
+        old_img, old_thumb = await self._template_with_files("a")
         res = await self.client.post("/api/admin/templates/a/image", files={"file": ("n.png", png(), "image/png")})
         self.assertEqual(res.status_code, 200, res.text)
+        self.assertFalse(old_img.exists() or old_thumb.exists())
         row = await db.fetch_one("SELECT image_url, thumb_url FROM templates WHERE id='a'")
         self.assertIsNotNone(media.local_path(row["image_url"]))
         self.assertTrue(row["thumb_url"].endswith(".webp"))
