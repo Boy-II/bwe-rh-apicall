@@ -392,7 +392,7 @@ async def _owned_task(task_id: str, user_id: str) -> dict:
     if not task_id:
         raise HTTPException(status_code=400, detail="缺少 taskId")
     task = await db.fetch_one(
-        "SELECT id,card_type FROM tasks WHERE rh_task_id=$1 AND user_id=$2",
+        "SELECT id,card_type,provider,status,results,error_message,created_at FROM tasks WHERE rh_task_id=$1 AND user_id=$2",
         task_id,
         user_id,
     )
