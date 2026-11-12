@@ -1,13 +1,15 @@
 """提示詞範本庫：瀏覽、搜尋、收藏。"""
 
+import re
+import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field
 
 from app.core import auth, db
 from app.core.rate_limit import rate_limit
-from app.services import prompt_tools
+from app.services import media, prompt_tools
 
 router = APIRouter()
 
@@ -200,3 +202,200 @@ async def fill_language(template_id: str, body: FillBody, _user: str = Depends(a
     if updated == "UPDATE 0":
         return {"text": await db.fetch_val(f"SELECT {col} FROM templates WHERE id=$1", template_id), "generated": False}
     return {"text": text, "generated": True}
+
+
+# ===== 存回範本庫、編輯、刪除 =====
+
+Mode = Literal["t2i", "i2i", "edit"]
+_CAT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+
+
+class SaveBody(BaseModel):
+    taskId: str
+    resultIndex: int = 0
+    title: str = Field(min_length=1, max_length=60)
+    categoryId: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    mode: Mode = "t2i"
+    promptEn: str = ""
+    promptZh: str = ""
+
+
+class PatchBody(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=60)
+    categoryId: str | None = None
+    tags: list[str] | None = None
+    mode: Mode | None = None
+    promptEn: str | None = None
+    promptZh: str | None = None
+
+
+def _clean_tags(tags: list[str]) -> list[str]:
+    out = []
+    for t in tags:
+        t = str(t).strip()[:20]
+        if t and t not in out:
+            out.append(t)
+    return out[:10]
+
+
+async def _valid_category(category_id: str | None) -> str | None:
+    if category_id and not await db.fetch_val("SELECT 1 FROM template_categories WHERE id=$1", category_id):
+        raise HTTPException(status_code=400, detail="分類不存在")
+    return category_id or None
+
+
+async def _store_image(content: bytes) -> tuple[str, str]:
+    try:
+        ext = media.image_ext(content)
+        url = media.save_bytes("templates", content, ext)
+        return url, media.make_thumbnail(url)
+    except media.MediaError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.post("/api/templates")
+async def save_template(body: SaveBody, request: Request, user_id: str = Depends(auth.require_user)):
+    task = await db.fetch_one(
+        """SELECT id, status, results, model_key FROM tasks
+        WHERE (rh_task_id=$1 OR id=$1) AND user_id=$2 AND card_type='model' LIMIT 1""",
+        body.taskId,
+        user_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="任務不存在")
+    if task["status"] != "SUCCESS":
+        raise HTTPException(status_code=400, detail="任務尚未成功完成")
+    results = task["results"] or []
+    if not 0 <= body.resultIndex < len(results):
+        raise HTTPException(status_code=400, detail="結果索引不存在")
+    if not body.promptEn.strip() and not body.promptZh.strip():
+        raise HTTPException(status_code=400, detail="請提供提示詞")
+    category = await _valid_category(body.categoryId)
+    # 先取得圖片再寫 DB：失敗不留半筆範本
+    try:
+        content = await media.read(results[body.resultIndex]["url"])
+    except media.MediaError:
+        raise HTTPException(status_code=502, detail="結果圖片已無法取得，請重新生成後再存") from None
+    image_url, thumb_url = await _store_image(content)
+    template_id = secrets.token_hex(8)
+    await db.execute(
+        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,
+        suggested_model,created_by,source_task_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+        template_id,
+        body.title.strip(),
+        category,
+        _clean_tags(body.tags),
+        body.mode,
+        body.promptEn.strip(),
+        body.promptZh.strip(),
+        image_url,
+        thumb_url,
+        task["model_key"] or "",
+        user_id,
+        task["id"],
+    )
+    return detail(await fetch_detail(template_id, user_id), user_id, await is_admin(request))
+
+
+async def _editable(template_id: str, request: Request, user_id: str) -> bool:
+    row = await db.fetch_one("SELECT created_by FROM templates WHERE id=$1", template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="範本不存在")
+    admin = await is_admin(request)
+    if not can_edit(row, user_id, admin):
+        raise HTTPException(status_code=403, detail="只有作者或管理員可以修改")
+    return admin
+
+
+@router.patch("/api/templates/{template_id}")
+async def update_template(
+    template_id: str, body: PatchBody, request: Request, user_id: str = Depends(auth.require_user)
+):
+    admin = await _editable(template_id, request, user_id)
+    fields = body.model_dump(exclude_unset=True)
+    if "categoryId" in fields:
+        fields["categoryId"] = await _valid_category(fields["categoryId"])
+    if "tags" in fields:
+        fields["tags"] = _clean_tags(fields["tags"] or [])
+    columns = {"title": "title", "categoryId": "category_id", "tags": "tags", "mode": "mode",
+               "promptEn": "prompt_en", "promptZh": "prompt_zh"}
+    sets, args = [], [template_id]
+    for key, value in fields.items():
+        if key in ("title", "promptEn", "promptZh") and value is not None:
+            value = value.strip()
+        if value is None and key != "categoryId":
+            continue
+        args.append(value)
+        sets.append(f"{columns[key]}=${len(args)}")
+    if sets:
+        await db.execute(f"UPDATE templates SET {', '.join(sets)}, updated_at=NOW() WHERE id=$1", *args)
+    return detail(await fetch_detail(template_id, user_id), user_id, admin)
+
+
+@router.delete("/api/templates/{template_id}")
+async def delete_template(template_id: str, request: Request, user_id: str = Depends(auth.require_user)):
+    await _editable(template_id, request, user_id)
+    await db.execute("DELETE FROM templates WHERE id=$1", template_id)
+    return {"success": True}
+
+
+# ===== 管理員：換圖、分類 =====
+
+
+class CategoryBody(BaseModel):
+    id: str
+    name: str = Field(min_length=1, max_length=30)
+
+
+class CategoryPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=30)
+    sortOrder: int | None = None
+
+
+@router.post("/api/admin/templates/{template_id}/image")
+async def replace_image(template_id: str, file: UploadFile = File(...), _: str = Depends(auth.require_admin)):
+    if not await db.fetch_val("SELECT 1 FROM templates WHERE id=$1", template_id):
+        raise HTTPException(status_code=404, detail="範本不存在")
+    content = await file.read(20 * 1024 * 1024 + 1)
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="圖片超過 20 MB")
+    image_url, thumb_url = await _store_image(content)
+    await db.execute(
+        "UPDATE templates SET image_url=$2, thumb_url=$3, updated_at=NOW() WHERE id=$1",
+        template_id, image_url, thumb_url,
+    )
+    return {"imageUrl": image_url, "thumbUrl": thumb_url}
+
+
+@router.post("/api/admin/template-categories")
+async def create_category(body: CategoryBody, _: str = Depends(auth.require_admin)):
+    if not _CAT_ID_RE.match(body.id):
+        raise HTTPException(status_code=400, detail="分類 id 只能用小寫英數與連字號")
+    order = await db.fetch_val("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM template_categories")
+    result = await db.execute(
+        "INSERT INTO template_categories(id,name,sort_order) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+        body.id, body.name.strip(), order,
+    )
+    if result == "INSERT 0 0":
+        raise HTTPException(status_code=409, detail="分類 id 已存在")
+    return {"id": body.id, "name": body.name.strip(), "sortOrder": order}
+
+
+@router.patch("/api/admin/template-categories/{category_id}")
+async def update_category(category_id: str, body: CategoryPatch, _: str = Depends(auth.require_admin)):
+    result = await db.execute(
+        """UPDATE template_categories SET name=COALESCE($2,name), sort_order=COALESCE($3,sort_order)
+        WHERE id=$1""",
+        category_id, body.name.strip() if body.name else None, body.sortOrder,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(status_code=404, detail="分類不存在")
+    return {"success": True}
+
+
+@router.delete("/api/admin/template-categories/{category_id}")
+async def delete_category(category_id: str, _: str = Depends(auth.require_admin)):
+    await db.execute("DELETE FROM template_categories WHERE id=$1", category_id)
+    return {"success": True}

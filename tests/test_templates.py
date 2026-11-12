@@ -1,10 +1,16 @@
+import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi import FastAPI
 
+from PIL import Image
+
 from app.core import auth, db
+from app.services import media
 from app.routers import templates
 from tests.pg_support import PostgresMixin
 
@@ -109,6 +115,107 @@ class TemplateBrowseTests(TemplatesBase):
         self.assertEqual((await self.client.get("/api/templates/zzz")).status_code, 404)
         tags = (await self.client.get("/api/template-tags?category=portrait")).json()
         self.assertEqual(tags[0], {"tag": "動物", "count": 2})
+
+
+
+def png():
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 600), "green").save(buf, "PNG")
+    return buf.getvalue()
+
+
+SAVE = {"resultIndex": 0, "title": "新範本", "categoryId": "ad-kv", "tags": ["產品"], "mode": "t2i",
+        "promptEn": "", "promptZh": "一張海報"}
+
+
+class TemplateManageTests(TemplatesBase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = patch.object(media, "MEDIA_DIR", Path(tmp.name))
+        p.start()
+        self.addCleanup(p.stop)
+
+    async def _task(self, tid="L1", rh="R1", user="u1", status="SUCCESS", url=None):
+        url = url or media.save_bytes("results", png(), "png")
+        await db.execute(
+            """INSERT INTO tasks(id,user_id,card_title,card_type,webapp_id,rh_task_id,status,results,model_key)
+            VALUES($1,$2,'GPT Image 2','model','',$3,$4,$5,'gpt-image-2-text')""",
+            tid, user, rh, status, [{"url": url, "fileType": "image"}],
+        )
+
+    async def test_save_from_task_copies_image_and_sets_owner(self):
+        await self._task()
+        res = await self.client.post("/api/templates", json={**SAVE, "taskId": "R1"})
+        self.assertEqual(res.status_code, 200, res.text)
+        d = res.json()
+        self.assertEqual((d["title"], d["categoryId"], d["promptZh"], d["createdBy"], d["canEdit"]),
+                         ("新範本", "ad-kv", "一張海報", "u1", True))
+        self.assertEqual(d["suggestedModel"], "gpt-image-2-text")
+        self.assertTrue(d["imageUrl"].startswith("/covers/media/templates/"))
+        self.assertTrue(d["thumbUrl"].endswith(".webp"))
+        row = await db.fetch_one("SELECT source_task_id FROM templates WHERE id=$1", d["id"])
+        self.assertEqual(row["source_task_id"], "L1")
+        # 用本地 id 也可以
+        res = await self.client.post("/api/templates", json={**SAVE, "taskId": "L1"})
+        self.assertEqual(res.status_code, 200, res.text)
+
+    async def test_save_fails_cleanly_when_result_unreachable(self):
+        await self._task(url="https://expired.test/x.png")
+        with patch.object(templates.media, "read", AsyncMock(side_effect=media.MediaError("gone"))):
+            res = await self.client.post("/api/templates", json={**SAVE, "taskId": "R1"})
+        self.assertEqual(res.status_code, 502)
+        self.assertIn("請重新生成", res.json()["detail"])
+        self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 0)
+
+    async def test_save_rejects_others_or_unfinished_task(self):
+        await self._task(user="u2")
+        await self._task(tid="L2", rh="R2", status="RUNNING")
+        self.assertEqual((await self.client.post("/api/templates", json={**SAVE, "taskId": "R1"})).status_code, 404)
+        self.assertEqual((await self.client.post("/api/templates", json={**SAVE, "taskId": "R2"})).status_code, 400)
+        await self._task(tid="L3", rh="R3")
+        bad = {**SAVE, "taskId": "R3", "resultIndex": 3}
+        self.assertEqual((await self.client.post("/api/templates", json=bad)).status_code, 400)
+        bad = {**SAVE, "taskId": "R3", "promptZh": "", "promptEn": ""}
+        self.assertEqual((await self.client.post("/api/templates", json=bad)).status_code, 400)
+
+    async def test_patch_delete_permissions(self):
+        await add_template("mine", created_by="u1")
+        await add_template("theirs", created_by="u2")
+        res = await self.client.patch("/api/templates/mine", json={"title": "改", "tags": ["x"], "promptEn": "e"})
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual((res.json()["title"], res.json()["tags"], res.json()["promptEn"]), ("改", ["x"], "e"))
+        self.assertEqual((await self.client.patch("/api/templates/theirs", json={"title": "x"})).status_code, 403)
+        self.assertEqual((await self.client.delete("/api/templates/theirs")).status_code, 403)
+        self.assertEqual((await self.client.delete("/api/templates/mine")).status_code, 200)
+        self.admin = True
+        self.assertEqual((await self.client.patch("/api/templates/theirs", json={"mode": "edit"})).status_code, 200)
+        self.assertEqual((await self.client.patch("/api/templates/theirs", json={"mode": "bad"})).status_code, 422)
+        self.assertEqual((await self.client.delete("/api/templates/theirs")).status_code, 200)
+        self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 0)
+
+    async def test_delete_category_nulls_templates(self):
+        res = await self.client.post("/api/admin/template-categories", json={"id": "food", "name": "食品"})
+        self.assertEqual(res.status_code, 200, res.text)
+        await add_template("a", category="food")
+        res = await self.client.patch("/api/admin/template-categories/food", json={"name": "餐飲", "sortOrder": 99})
+        self.assertEqual(res.status_code, 200)
+        cats = (await self.client.get("/api/template-categories")).json()
+        self.assertEqual(cats[-1]["name"], "餐飲")
+        self.assertEqual((await self.client.delete("/api/admin/template-categories/food")).status_code, 200)
+        self.assertIsNone(await db.fetch_val("SELECT category_id FROM templates WHERE id='a'"))
+        self.assertEqual((await self.client.post("/api/admin/template-categories", json={"id": "Bad Id", "name": "x"})).status_code, 400)
+
+    async def test_admin_replace_image(self):
+        await add_template("a")
+        res = await self.client.post("/api/admin/templates/a/image", files={"file": ("n.png", png(), "image/png")})
+        self.assertEqual(res.status_code, 200, res.text)
+        row = await db.fetch_one("SELECT image_url, thumb_url FROM templates WHERE id='a'")
+        self.assertIsNotNone(media.local_path(row["image_url"]))
+        self.assertTrue(row["thumb_url"].endswith(".webp"))
+        bad = await self.client.post("/api/admin/templates/a/image", files={"file": ("n.png", b"xx", "image/png")})
+        self.assertEqual(bad.status_code, 400)
 
 
 if __name__ == "__main__":
