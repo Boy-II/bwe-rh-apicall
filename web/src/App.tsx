@@ -3,9 +3,10 @@ import { Toaster } from 'sonner';
 import { useAuth } from '@/lib/auth-store';
 import { initTheme } from '@/lib/theme-store';
 import { LoginPanel } from '@/components/LoginPanel';
-import { HomePage } from '@/components/HomePage';
+import { AppsPage } from '@/components/HomePage';
 import { TaskView } from '@/components/TaskView';
 import { TaskHistoryView } from '@/components/TaskHistoryView';
+import { AppShell, type NavKey } from '@/components/layout/AppShell';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -15,8 +16,16 @@ export interface RerunPrefill {
   prevCreatedAt?: string | null;
 }
 
-type Route =
-  | { kind: 'home' }
+export interface GeneratePrefill {
+  modelKey: string;
+  nodeInput: NodeInfo[];
+}
+
+export type Route =
+  | { kind: 'gallery' }
+  | { kind: 'favorites' }
+  | { kind: 'generate'; templateId?: string; prefill?: GeneratePrefill; nonce?: number }
+  | { kind: 'apps' }
   | { kind: 'task'; card: Card; prefill?: RerunPrefill }
   | { kind: 'history' };
 
@@ -24,7 +33,9 @@ function App() {
   const user = useAuth((s) => s.user);
   const hasHydrated = useAuth((s) => s.hasHydrated);
   const hydrate = useAuth((s) => s.hydrate);
-  const [route, setRoute] = useState<Route>({ kind: 'home' });
+  const [route, setRoute] = useState<Route>({ kind: 'gallery' });
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   useEffect(() => {
     initTheme();
@@ -48,25 +59,40 @@ function App() {
     );
   }
 
+  // AI 應用的工作流頁維持原本的全版面
+  if (route.kind === 'task') {
+    return (
+      <>
+        <TaskView card={route.card} prefill={route.prefill} onBack={() => setRoute({ kind: 'apps' })} />
+        <Toaster richColors position="top-right" />
+      </>
+    );
+  }
+
+  const navigate = (key: NavKey) =>
+    setRoute(key === 'generate' ? { kind: 'generate', nonce: Date.now() } : { kind: key });
+
   return (
     <>
-      {route.kind === 'task' ? (
-        <TaskView
-          card={route.card}
-          prefill={route.prefill}
-          onBack={() => setRoute({ kind: 'home' })}
-        />
-      ) : route.kind === 'history' ? (
-        <TaskHistoryView
-          onBack={() => setRoute({ kind: 'home' })}
-          onRerun={(card, prefill) => setRoute({ kind: 'task', card, prefill })}
-        />
-      ) : (
-        <HomePage
-          onSelect={(card) => setRoute({ kind: 'task', card })}
-          onOpenHistory={() => setRoute({ kind: 'history' })}
-        />
-      )}
+      <AppShell
+        active={route.kind}
+        onNavigate={navigate}
+        onOpenModels={() => setModelsOpen(true)}
+        onOpenCategories={() => setCategoriesOpen(true)}
+      >
+        {route.kind === 'apps' ? (
+          <AppsPage onSelect={(card) => setRoute({ kind: 'task', card })} />
+        ) : route.kind === 'history' ? (
+          <TaskHistoryView
+            onBack={() => setRoute({ kind: 'gallery' })}
+            onRerun={(card, prefill) => setRoute({ kind: 'task', card, prefill })}
+          />
+        ) : (
+          <div className="p-8 text-muted-foreground">建置中…</div>
+        )}
+      </AppShell>
+      {/* modelsOpen / categoriesOpen：Task 15 接上管理介面 */}
+      {modelsOpen && categoriesOpen && null}
       <Toaster richColors position="top-right" />
     </>
   );

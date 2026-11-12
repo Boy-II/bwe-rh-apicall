@@ -3,7 +3,7 @@
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from app.core import auth, db
 from app.schemas import CardCreate, CardReorderRequest, CardUpdate
@@ -53,6 +53,7 @@ def _row_to_dict(row: dict) -> dict:
         "instanceType": row.get("instance_type") or "default",
         "maxDurationSeconds": row.get("max_duration_seconds") or 0,
         "enableMaskEditor": bool(row.get("enable_mask_editor")),
+        "hidden": bool(row.get("hidden")),
         "sortOrder": row.get("sort_order"),
         "createdAt": row["created_at"].isoformat() if row.get("created_at") else "",
     }
@@ -61,7 +62,7 @@ def _row_to_dict(row: dict) -> dict:
 _CARD_COLUMNS = (
     "id, card_type, webapp_id, workflow_id, title, description, llm_note, icon, color, "
     "cover_url, tags, editable_fields, instance_type, max_duration_seconds, "
-    "enable_mask_editor, sort_order, created_at, category, image_mode, model_key, prompt_profile"
+    "enable_mask_editor, sort_order, created_at, category, image_mode, model_key, prompt_profile, hidden"
 )
 
 
@@ -81,14 +82,17 @@ def _normalize_tags(tags: list[str]) -> list[str]:
 
 
 @router.get("/api/cards")
-async def list_cards(_user: str = Depends(auth.require_user)):
+async def list_cards(request: Request, _user: str = Depends(auth.require_user)):
+    # 管理員看得到隱藏卡片（可再開放）；一般使用者只看到未隱藏的
+    admin = await auth.is_admin_token_valid(request.headers.get("X-Admin-Token", ""))
     rows = await db.fetch_all(
         f"""
         SELECT {_CARD_COLUMNS}
         FROM cards
-        WHERE enabled = TRUE
+        WHERE enabled = TRUE AND ($1 OR NOT hidden)
         ORDER BY sort_order, created_at
-        """
+        """,
+        admin,
     )
     return {"cards": [_row_to_dict(r) for r in rows]}
 
@@ -228,6 +232,10 @@ async def admin_update_card(
     if req.enableMaskEditor is not None:
         sets.append(f"enable_mask_editor = ${next_idx}")
         args.append(bool(req.enableMaskEditor))
+        next_idx += 1
+    if req.hidden is not None:
+        sets.append(f"hidden = ${next_idx}")
+        args.append(bool(req.hidden))
         next_idx += 1
 
     for column, value in [

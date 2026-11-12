@@ -90,6 +90,7 @@ export interface Card {
   editableFields: EditableField[];
   instanceType: InstanceType;
   maxDurationSeconds: number; // 0 = 用全域預設（10 分鐘）
+  hidden?: boolean; // 管理員才看得到；true = 對一般使用者隱藏
   enableMaskEditor: boolean; // 啟用後第一個 IMAGE 為來源、第二個為 mask（user 端隱藏 mask 欄位）
   sortOrder?: number;
   createdAt?: string;

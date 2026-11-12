@@ -204,7 +204,14 @@ function CardItem({ card, isAdmin, sortable, onSelect, onEdit, onDelete }: CardI
           )}
         </div>
         <div className="flex flex-1 flex-col gap-1 p-4">
-          <h3 className="text-base font-semibold leading-tight">{card.title}</h3>
+          <h3 className="text-base font-semibold leading-tight">
+            {card.title}
+            {card.hidden && (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                已隱藏
+              </span>
+            )}
+          </h3>
           {card.description && (
             <p className="line-clamp-2 text-sm text-muted-foreground">{card.description}</p>
           )}

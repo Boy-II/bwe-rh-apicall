@@ -64,6 +64,7 @@ class CardUpdate(BaseModel):
     instanceType: Optional[str] = None  # None = 不更動
     maxDurationSeconds: Optional[int] = None  # None = 不更動
     enableMaskEditor: Optional[bool] = None  # None = 不更動
+    hidden: Optional[bool] = None  # None = 不更動；True = 對使用者隱藏
     category: Optional[str] = None
     imageMode: Optional[str] = None
     promptProfile: Optional[str] = None

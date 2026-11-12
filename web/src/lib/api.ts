@@ -120,7 +120,7 @@ export const auth = {
 // --- Cards ---
 export const cards = {
   list: async (): Promise<Card[]> => {
-    const res = await request<{ cards: Card[] }>('/api/cards', { user: true });
+    const res = await request<{ cards: Card[] }>('/api/cards', { user: true, admin: true });
     return res.cards || [];
   },
   create: (
@@ -159,6 +159,7 @@ export const cards = {
           | 'llmNote'
           | 'tags'
           | 'enableMaskEditor'
+          | 'hidden'
           | 'category'
           | 'imageMode'
           | 'promptProfile'

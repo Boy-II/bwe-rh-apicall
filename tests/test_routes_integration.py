@@ -218,3 +218,23 @@ class RoutesIntegration(PostgresMixin, unittest.IsolatedAsyncioTestCase):
             "SELECT status,session_version FROM users WHERE id='bwhr:001'"
         )
         self.assertEqual(user, {"status": "rejected", "session_version": 1})
+
+    async def test_hidden_cards_excluded_for_users_visible_for_admin(self):
+        await db.execute(
+            """INSERT INTO cards(id,webapp_id,title,category) VALUES
+            ('img','w1','圖片應用','image'),('vid','w2','影片應用','video')"""
+        )
+        await db.execute("UPDATE cards SET hidden=TRUE WHERE id='vid'")
+        with patch.object(cards.auth, "is_admin_token_valid", AsyncMock(return_value=False)):
+            ids = [c["id"] for c in (await self.client.get("/api/cards")).json()["cards"]]
+        self.assertIn("img", ids)
+        self.assertNotIn("vid", ids)
+        self.assertNotIn("model:gemini-pro-text", ids)
+        with patch.object(cards.auth, "is_admin_token_valid", AsyncMock(return_value=True)):
+            data = {c["id"]: c for c in (await self.client.get("/api/cards")).json()["cards"]}
+        self.assertTrue(data["vid"]["hidden"])
+        self.assertFalse(data["img"]["hidden"])
+        res = await self.client.put("/api/admin/cards/vid", json={"title": "影片應用", "hidden": False})
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertFalse(res.json()["hidden"])
+
