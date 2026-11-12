@@ -27,6 +27,14 @@ export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete }: 
           )}
         </div>
       </button>
+      {t.modelLabel && (
+        <span
+          aria-label={`使用模型：${t.modelLabel}`}
+          className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm"
+        >
+          {t.modelLabel}
+        </span>
+      )}
       <div className="absolute right-2 top-2 flex gap-1">
         {t.canEdit && (onEdit || onDelete) && (
           <div className="relative">

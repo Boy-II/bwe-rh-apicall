@@ -9,11 +9,11 @@ from pydantic import BaseModel, Field
 
 from app.core import auth, db
 from app.core.rate_limit import rate_limit
-from app.services import media, prompt_tools
+from app.services import image_registry, media, prompt_tools
 
 router = APIRouter()
 
-_SUMMARY_COLS = "t.id, t.title, t.category_id, t.tags, t.mode, t.thumb_url, t.image_url, t.created_by"
+_SUMMARY_COLS = "t.id, t.title, t.category_id, t.tags, t.mode, t.thumb_url, t.image_url, t.created_by, t.model_label"
 _DETAIL_COLS = _SUMMARY_COLS + ", t.prompt_en, t.prompt_zh, t.suggested_model"
 
 
@@ -35,6 +35,7 @@ def summary(row: dict, user_id: str, admin: bool) -> dict:
         "thumbUrl": row["thumb_url"],
         "imageUrl": row["image_url"],
         "favorited": bool(row.get("favorited")),
+        "modelLabel": row.get("model_label") or "",
         "canEdit": can_edit(row, user_id, admin),
     }
 
@@ -209,6 +210,7 @@ async def fill_language(template_id: str, body: FillBody, _user: str = Depends(a
 # ===== 存回範本庫、編輯、刪除 =====
 
 Mode = Literal["t2i", "i2i", "edit"]
+ModelLabel = Literal["", "Gemini", "GPT", "Grok", "ComfyUI"]
 _CAT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
 
@@ -230,6 +232,7 @@ class PatchBody(BaseModel):
     mode: Mode | None = None
     promptEn: str | None = None
     promptZh: str | None = None
+    modelLabel: ModelLabel | None = None
 
 
 def _clean_tags(tags: list[str]) -> list[str]:
@@ -281,10 +284,14 @@ async def save_template(body: SaveBody, request: Request, user_id: str = Depends
         raise HTTPException(status_code=502, detail="結果圖片已無法取得，請重新生成後再存") from None
     image_url, thumb_url = await _store_image(content)
     template_id = secrets.token_hex(8)
+    model = await image_registry.get(task["model_key"] or "")
+    label = image_registry.model_family(
+        " ".join([task["model_key"] or "", *( [model["upstream"], model["displayName"]] if model else [])])
+    )
     await db.execute(
         """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,
-        suggested_model,created_by,source_task_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+        suggested_model,created_by,source_task_id,model_label)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
         template_id,
         body.title.strip(),
         category,
@@ -297,6 +304,7 @@ async def save_template(body: SaveBody, request: Request, user_id: str = Depends
         task["model_key"] or "",
         user_id,
         task["id"],
+        label,
     )
     return detail(await fetch_detail(template_id, user_id), user_id, await is_admin(request))
 
@@ -322,7 +330,7 @@ async def update_template(
     if "tags" in fields:
         fields["tags"] = _clean_tags(fields["tags"] or [])
     columns = {"title": "title", "categoryId": "category_id", "tags": "tags", "mode": "mode",
-               "promptEn": "prompt_en", "promptZh": "prompt_zh"}
+               "promptEn": "prompt_en", "promptZh": "prompt_zh", "modelLabel": "model_label"}
     sets, args = [], [template_id]
     for key, value in fields.items():
         if key in ("title", "promptEn", "promptZh") and value is not None:
@@ -412,6 +420,7 @@ async def admin_create_template(
     title: str = Form(""),
     categoryId: str = Form(""),
     mode: str = Form(""),
+    modelLabel: str = Form(""),
     _: str = Depends(auth.require_admin),
 ):
     """管理員手動新增範本；標題／分類／模式未填時由 AI 依提示詞判斷。"""
@@ -420,6 +429,8 @@ async def admin_create_template(
         raise HTTPException(status_code=400, detail="請至少填寫中文或英文提示詞")
     if mode and mode not in ("t2i", "i2i", "edit"):
         raise HTTPException(status_code=400, detail="模式不正確")
+    if modelLabel and modelLabel not in image_registry.MODEL_LABELS:
+        raise HTTPException(status_code=400, detail="模型標籤不正確")
     await _valid_category(categoryId or None)
     content = await file.read(20 * 1024 * 1024 + 1)
     if len(content) > 20 * 1024 * 1024:
@@ -442,8 +453,9 @@ async def admin_create_template(
     image_url, thumb_url = await _store_image(content)
     template_id = secrets.token_hex(8)
     await db.execute(
-        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,model_label)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)""",
         template_id, title.strip()[:60], categoryId, tags, mode, promptEn, promptZh, image_url, thumb_url,
+        modelLabel or image_registry.model_family(f"{promptEn} {promptZh}"),
     )
     return detail(await fetch_detail(template_id, ""), "", True)

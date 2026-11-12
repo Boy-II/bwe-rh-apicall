@@ -13,7 +13,7 @@ from pathlib import Path
 import json
 
 from app.core import db
-from app.services import media, prompt_tools
+from app.services import image_registry, media, prompt_tools
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class RawTemplate:
     image: Path
     hint_category: str
     prompt_alt: str = ""  # 另一語言的原文（若來源本身就有）
+    model_label: str = ""  # Gemini／GPT／Grok／ComfyUI；空字串＝不顯示
 
 
 @dataclass
@@ -83,6 +84,7 @@ def parse_awesome_prompts(root: Path) -> list[RawTemplate]:
                 tags=tags,
                 image=image,
                 hint_category=category,
+                model_label=image_registry.model_family(body),
             )
         )
     return out
@@ -114,6 +116,7 @@ def parse_gpt_image2(root: Path) -> list[RawTemplate]:
                     tags=[],
                     image=image,
                     hint_category="",
+                    model_label="GPT",  # awesome-gpt-image-2 全為 GPT Image 2 案例
                 )
             )
     return out
@@ -130,6 +133,7 @@ def parse_manual(manifest: Path) -> list[RawTemplate]:
             image=manifest.parent / it["image"],
             hint_category=it.get("category", ""),
             prompt_alt=it.get("promptAlt", "").strip(),
+            model_label=it.get("model") or image_registry.model_family(it["prompt"]),
         )
         for it in items
     ]
@@ -165,8 +169,8 @@ async def _import_one(raw: RawTemplate, categories: list[dict]) -> None:
     image_url = media.save_bytes("templates", content, media.image_ext(content))
     thumb_url = media.make_thumbnail(image_url)
     await db.execute(
-        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,source_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (source_id) DO NOTHING""",
+        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,source_id,model_label)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (source_id) DO NOTHING""",
         secrets.token_hex(8),
         data["title"],
         data["categoryId"],
@@ -177,6 +181,7 @@ async def _import_one(raw: RawTemplate, categories: list[dict]) -> None:
         image_url,
         thumb_url,
         raw.source_id,
+        raw.model_label,
     )
 
 

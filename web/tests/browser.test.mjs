@@ -67,6 +67,7 @@ const template = {
   imageUrl: '/covers/proxy-check.png',
   favorited: false,
   canEdit: true,
+  modelLabel: 'Gemini',
   promptEn: 'A summer poster with bold title "SALE"',
   promptZh: '',
   suggestedModel: '',
@@ -187,6 +188,7 @@ async function openApps(page) {
 test('gallery template opens the generate page and inserts its prompt', async () => {
   const { page, context } = await pageFixture();
   try {
+    assert.equal(await page.getByLabel('使用模型：Gemini').count(), 1);
     await page.getByRole('button', { name: /夏日海報/ }).click();
     const card = page.getByRole('region', { name: '範本' });
     await card.waitFor();

@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import api from '@/lib/api';
 import { useAuth, isAdmin } from '@/lib/auth-store';
-import type { TemplateCategory, TemplateDetail, TemplateMode } from '@/lib/types';
+import { MODEL_LABELS, type ModelLabel, type TemplateCategory, type TemplateDetail, type TemplateMode } from '@/lib/types';
 
 interface Props {
   templateId: string | null;
@@ -45,6 +45,7 @@ export function TemplateEditDialog({ templateId, onClose, onSaved }: Props) {
         mode: t.mode,
         promptEn: t.promptEn,
         promptZh: t.promptZh,
+        modelLabel: t.modelLabel,
       });
       toast.success('範本已更新');
       onSaved();
@@ -112,6 +113,17 @@ export function TemplateEditDialog({ templateId, onClose, onSaved }: Props) {
                 </select>
               </label>
             </div>
+            <label className="block space-y-1">
+              <span className="font-medium">使用模型</span>
+              <select className="h-9 w-full rounded-md border border-input bg-background px-2" value={t.modelLabel} onChange={(e) => setT({ ...t, modelLabel: e.target.value as ModelLabel })}>
+                  <option value="">{'不標示'}</option>
+                  {MODEL_LABELS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+            </label>
             <label className="block space-y-1">
               <span className="font-medium">標籤（以頓號或逗號分隔）</span>
               <Input value={tags} onChange={(e) => setTags(e.target.value)} />

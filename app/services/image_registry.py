@@ -1,6 +1,7 @@
 """生圖模型清單（image_models 表）：生成頁下拉選單與 API 路由的唯一來源。"""
 
 import json
+import re
 from pathlib import Path
 
 from app.core import db
@@ -17,6 +18,23 @@ KEEP_KEYS = [
     ("gpt-image-2-text", "GPT Image 2"),
     ("gpt-image-2-image", "GPT Image 2"),
 ]
+
+MODEL_LABELS = ("Gemini", "GPT", "Grok", "ComfyUI")
+_FAMILY_RULES = [
+    ("ComfyUI", re.compile(r"comfy", re.I)),
+    ("Grok", re.compile(r"grok", re.I)),
+    ("Gemini", re.compile(r"gemini|nano[\s-]?banana", re.I)),
+    ("GPT", re.compile(r"gpt|chatgpt|openai|dall", re.I)),
+]
+
+
+def model_family(text: str) -> str:
+    """把模型 key／上游 ID／顯示名稱或提示詞內文歸類成短標籤；判斷不出來回空字串。"""
+    for label, rule in _FAMILY_RULES:
+        if rule.search(text or ""):
+            return label
+    return ""
+
 
 _COLUMNS = "key, display_name, mode, provider, upstream, profile, params, enabled, sort_order"
 

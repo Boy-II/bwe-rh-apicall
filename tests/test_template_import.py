@@ -98,6 +98,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(bw.title, "Bw-Portrait")
         self.assertEqual(bw.tags, ["portraits", "test"])
         self.assertEqual(bw.hint_category, "portraits")
+        self.assertEqual(bw.model_label, "")
         self.assertTrue(bw.image.is_file())
 
     def test_parse_gpt_image2_skips_case_without_image(self):
@@ -107,6 +108,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(raws[0].title, "信息图可视化设计")
         self.assertEqual(raws[0].prompt, "竖版 9:16 等距剖面信息图「城市生命系统图谱」")
         self.assertEqual(raws[1].image.name, "case3.jpg")
+        self.assertEqual(raws[0].model_label, "GPT")
 
     def test_parse_manual(self):
         (self.root / "a.png").write_bytes(png())
@@ -187,6 +189,7 @@ class ImportAllTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(media.local_path(row["image_url"]))
         self.assertTrue(row["thumb_url"].endswith(".webp"))
         self.assertEqual((row["source_id"], row["created_by"], row["category_id"]), ("gpt-image-2:case-1", None, "creative"))
+        self.assertEqual(row["model_label"], "GPT")
         self.assertEqual(media.read_sync_local(row["image_url"]), (self.root / "data/images/case1.jpg").read_bytes())
 
 

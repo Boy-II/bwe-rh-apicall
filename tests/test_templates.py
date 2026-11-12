@@ -16,12 +16,12 @@ from tests.pg_support import PostgresMixin
 
 
 async def add_template(tid, *, title="t", category="creative", tags=(), mode="t2i",
-                       en="", zh="", created_by=None, age=0):
+                       en="", zh="", created_by=None, age=0, model_label=""):
     await db.execute(
-        f"""INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,created_by,created_at)
+        f"""INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url,created_by,created_at,model_label)
         VALUES($1,$2,$3,$4,$5,$6,$7,'/covers/media/templates/x.png','/covers/media/templates/x.webp',$8,
-        NOW() - INTERVAL '{int(age)} seconds')""",
-        tid, title, category, list(tags), mode, en, zh, created_by,
+        NOW() - INTERVAL '{int(age)} seconds',$9)""",
+        tid, title, category, list(tags), mode, en, zh, created_by, model_label,
     )
 
 
@@ -124,6 +124,28 @@ class TemplateBrowseTests(TemplatesBase):
         items = {x["id"]: x["canEdit"] for x in (await self.client.get("/api/templates")).json()["items"]}
         self.assertEqual(items, {"mine": True, "theirs": True})
 
+    async def test_model_label_in_list_and_patch(self):
+        await add_template("a", model_label="Gemini", created_by="u1")
+        item = (await self.client.get("/api/templates")).json()["items"][0]
+        self.assertEqual(item["modelLabel"], "Gemini")
+        res = await self.client.patch("/api/templates/a", json={"modelLabel": "Grok"})
+        self.assertEqual(res.json()["modelLabel"], "Grok")
+        self.assertEqual((await self.client.patch("/api/templates/a", json={"modelLabel": "Midjourney"})).status_code, 422)
+
+    async def test_model_label_backfill_migration(self):
+        from pathlib import Path
+        sql = (Path(templates.__file__).parents[1] / "migrations/019_template_model_label.sql").read_text()
+        await add_template("g1")
+        await db.execute("UPDATE templates SET source_id='gpt-image-2:case-1' WHERE id='g1'")
+        await add_template("n1", en="made with nano banana")
+        await add_template("u1t")
+        await db.execute("UPDATE templates SET suggested_model='gpt-image-2-text' WHERE id='u1t'")
+        await add_template("x1", en="a red apple")
+        await db.execute("UPDATE templates SET model_label='' ")
+        await db.execute(sql)
+        rows = dict((r["id"], r["model_label"]) for r in await db.fetch_all("SELECT id, model_label FROM templates"))
+        self.assertEqual(rows, {"g1": "GPT", "n1": "Gemini", "u1t": "GPT", "x1": ""})
+
     async def test_detail_and_tags(self):
         await add_template("a", en="fox", zh="狐狸", tags=["動物", "寫實"], category="anime")
         await add_template("b", tags=["動物"], category="anime")
@@ -148,6 +170,8 @@ SAVE = {"resultIndex": 0, "title": "新範本", "categoryId": "ad-kv", "tags": [
 class TemplateManageTests(TemplatesBase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        from app.services import image_registry
+        await image_registry.seed_image_models()
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         p = patch.object(media, "MEDIA_DIR", Path(tmp.name))
@@ -170,6 +194,7 @@ class TemplateManageTests(TemplatesBase):
         self.assertEqual((d["title"], d["categoryId"], d["promptZh"], d["createdBy"], d["canEdit"]),
                          ("新範本", "ad-kv", "一張海報", "u1", True))
         self.assertEqual(d["suggestedModel"], "gpt-image-2-text")
+        self.assertEqual(d["modelLabel"], "GPT")
         self.assertTrue(d["imageUrl"].startswith("/covers/media/templates/"))
         self.assertTrue(d["thumbUrl"].endswith(".webp"))
         row = await db.fetch_one("SELECT source_task_id FROM templates WHERE id=$1", d["id"])
@@ -254,11 +279,11 @@ class TemplateManageTests(TemplatesBase):
         with patch.object(templates.prompt_tools, "suggest_meta", AsyncMock()) as sm:
             res = await self.client.post(
                 "/api/admin/templates",
-                data={"promptEn": "a poster", "title": "手動", "categoryId": "poster-banner", "mode": "t2i"},
+                data={"promptEn": "a poster", "title": "手動", "categoryId": "poster-banner", "mode": "t2i", "modelLabel": "ComfyUI"},
                 files={"file": ("a.png", png(), "image/png")},
             )
         self.assertEqual(res.status_code, 200, res.text)
-        self.assertEqual((res.json()["title"], res.json()["categoryId"]), ("手動", "poster-banner"))
+        self.assertEqual((res.json()["title"], res.json()["categoryId"], res.json()["modelLabel"]), ("手動", "poster-banner", "ComfyUI"))
         sm.assert_not_called()
 
     async def test_admin_create_template_validation(self):

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
-import type { TemplateCategory } from '@/lib/types';
+import { MODEL_LABELS, type TemplateCategory } from '@/lib/types';
 
 const ACCEPT = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -20,6 +20,7 @@ export function NewTemplatePage({ onCreated }: { onCreated: () => void }) {
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [mode, setMode] = useState('');
+  const [modelLabel, setModelLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
@@ -64,6 +65,7 @@ export function NewTemplatePage({ onCreated }: { onCreated: () => void }) {
     setTitle('');
     setCategoryId('');
     setMode('');
+    setModelLabel('');
   };
 
   const submit = async () => {
@@ -71,7 +73,7 @@ export function NewTemplatePage({ onCreated }: { onCreated: () => void }) {
     if (!promptZh.trim() && !promptEn.trim()) return toast.error('請至少填寫中文或英文提示詞');
     setSaving(true);
     try {
-      const t = await api.adminTemplates.create({ file, promptZh, promptEn, title, categoryId, mode });
+      const t = await api.adminTemplates.create({ file, promptZh, promptEn, title, categoryId, mode, modelLabel });
       toast.success(`已新增「${t.title}」`);
       reset();
       onCreated();
@@ -179,6 +181,17 @@ export function NewTemplatePage({ onCreated }: { onCreated: () => void }) {
               </select>
             </label>
           </div>
+          <label className="block space-y-1">
+            <span className="font-medium">使用模型（選填）</span>
+            <select className="h-9 w-full rounded-md border border-input bg-background px-2" value={modelLabel} onChange={(e) => setModelLabel(e.target.value)}>
+              <option value="">依提示詞判斷（判斷不出來就不標示）</option>
+              {MODEL_LABELS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button onClick={submit} disabled={saving} className="w-full">
             {saving ? '新增中…（AI 判斷約需數秒）' : '新增到提示詞庫'}
           </Button>

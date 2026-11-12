@@ -284,6 +284,8 @@ export interface AdminImageModel extends ImageModel {
   sortOrder: number;
 }
 export type TemplateMode = 't2i' | 'i2i' | 'edit';
+export type ModelLabel = '' | 'Gemini' | 'GPT' | 'Grok' | 'ComfyUI';
+export const MODEL_LABELS: ModelLabel[] = ['Gemini', 'GPT', 'Grok', 'ComfyUI'];
 export interface TemplateSummary {
   id: string;
   title: string;
@@ -294,6 +296,7 @@ export interface TemplateSummary {
   imageUrl: string;
   favorited: boolean;
   canEdit: boolean;
+  modelLabel: ModelLabel;
 }
 export interface TemplateDetail extends TemplateSummary {
   promptEn: string;

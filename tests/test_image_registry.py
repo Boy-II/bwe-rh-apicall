@@ -56,6 +56,16 @@ class ImageRegistryTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         m = await image_registry.get("omni-gemini-flash-image-edit")
         self.assertEqual([p["fieldKey"] for p in m["params"]], ["prompt", "image", "size"])
 
+    def test_model_family(self):
+        f = image_registry.model_family
+        self.assertEqual(f("gemini-pro-image rhart-image-n-pro-official/image-to-image Gemini Pro"), "Gemini")
+        self.assertEqual(f("A photo, made with Nano Banana"), "Gemini")
+        self.assertEqual(f("gpt-image-2-text GPT Image 2"), "GPT")
+        self.assertEqual(f("try it in ChatGPT / GPT-4o"), "GPT")
+        self.assertEqual(f("xai grok-2-image"), "Grok")
+        self.assertEqual(f("comfyui/flux-dev"), "ComfyUI")
+        self.assertEqual(f("a red apple"), "")
+
     async def test_get_and_list_shape(self):
         await image_registry.seed_image_models()
         m = await image_registry.get("gpt-image-2-image")

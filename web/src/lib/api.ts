@@ -3,6 +3,7 @@ import type {
   AccessSettings,
   AdminImageModel,
   ImageModel,
+  ModelLabel,
   SaveTemplateBody,
   TemplateCategory,
   TemplateDetail,
@@ -366,7 +367,7 @@ export const templates = {
     }),
   save: (body: SaveTemplateBody) =>
     request<TemplateDetail>('/api/templates', { method: 'POST', user: true, admin: true, body: json(body) }),
-  update: (id: string, body: Partial<Omit<SaveTemplateBody, 'taskId' | 'resultIndex'>>) =>
+  update: (id: string, body: Partial<Omit<SaveTemplateBody, 'taskId' | 'resultIndex'> & { modelLabel: ModelLabel }>) =>
     request<TemplateDetail>(`/api/templates/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       user: true,
@@ -428,10 +429,10 @@ export const adminModels = {
 };
 
 export const adminTemplates = {
-  create: (body: { file: File; promptZh: string; promptEn: string; title: string; categoryId: string; mode: string }) => {
+  create: (body: { file: File; promptZh: string; promptEn: string; title: string; categoryId: string; mode: string; modelLabel: string }) => {
     const fd = new FormData();
     fd.append('file', body.file);
-    for (const k of ['promptZh', 'promptEn', 'title', 'categoryId', 'mode'] as const) fd.append(k, body[k]);
+    for (const k of ['promptZh', 'promptEn', 'title', 'categoryId', 'mode', 'modelLabel'] as const) fd.append(k, body[k]);
     return request<TemplateDetail>('/api/admin/templates', { method: 'POST', admin: true, body: fd });
   },
   replaceImage: (id: string, file: File) => {
