@@ -8,6 +8,7 @@ import { TaskView } from '@/components/TaskView';
 import { TaskHistoryView } from '@/components/TaskHistoryView';
 import { AppShell, type NavKey } from '@/components/layout/AppShell';
 import { GalleryPage } from '@/components/gallery/GalleryPage';
+import { GeneratePage } from '@/components/generate/GeneratePage';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -87,16 +88,17 @@ function App() {
             favoritesOnly={route.kind === 'favorites'}
             onUse={(templateId) => setRoute({ kind: 'generate', templateId, nonce: Date.now() })}
           />
+        ) : route.kind === 'generate' ? (
+          <GeneratePage key={route.nonce} templateId={route.templateId} prefill={route.prefill} />
         ) : route.kind === 'apps' ? (
           <AppsPage onSelect={(card) => setRoute({ kind: 'task', card })} />
         ) : route.kind === 'history' ? (
           <TaskHistoryView
             onBack={() => setRoute({ kind: 'gallery' })}
             onRerun={(card, prefill) => setRoute({ kind: 'task', card, prefill })}
+            onRerunModel={(prefill) => setRoute({ kind: 'generate', prefill, nonce: Date.now() })}
           />
-        ) : (
-          <div className="p-8 text-muted-foreground">建置中…</div>
-        )}
+        ) : null}
       </AppShell>
       {/* modelsOpen / categoriesOpen：Task 15 接上管理介面 */}
       {modelsOpen && categoriesOpen && null}
