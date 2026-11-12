@@ -105,11 +105,10 @@ async def resolve_rh_images(payload: dict, model: dict) -> dict:
                 converted.append(v)
                 continue
             try:
-                content = media.read_sync_local(v)
+                content, ext = media.conform(media.read_sync_local(v), p.get("accept"))
             except media.MediaError:
                 raise HTTPException(status_code=400, detail="參考圖已不存在，請重新上傳") from None
-            ext = path.suffix.lstrip(".")
-            converted.append(await model_api.upload(path.name, content, _MIME.get(ext, "image/png")))
+            converted.append(await model_api.upload(f"{path.stem}.{ext}", content, _MIME.get(ext, "image/png")))
         out[p["fieldKey"]] = converted if isinstance(value, list) else converted[0]
     return out
 
@@ -127,6 +126,12 @@ async def submit_model(req: ModelSubmit, user_id: str = Depends(auth.require_use
     ]
     raw = {"templateId": req.templateId} if req.templateId else {}
     if model["provider"] == "openai":
+        # 只接受自有儲存的參考圖：伺服器不代使用者抓取任意網址（防 SSRF）
+        for p in model["params"]:
+            value = payload.get(p["fieldKey"]) if p["type"] == "IMAGE" else None
+            for v in (value if isinstance(value, list) else [value] if value else []):
+                if media.local_path(v) is None:
+                    raise HTTPException(status_code=400, detail="參考圖請重新上傳後再送出")
         return await openai_images.submit(local_id, user_id, model, payload, inputs, raw)
     # 先建本地紀錄：上游任務絕不能沒有歸屬
     await db.execute(

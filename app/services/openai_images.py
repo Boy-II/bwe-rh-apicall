@@ -49,11 +49,12 @@ async def _call(client: httpx.AsyncClient, model: dict, payload: dict) -> bytes:
     body = build_request(model, payload)
     if model["mode"] == "image-to-image":
         files = []
-        for field in _image_fields(model):
-            value = payload.get(field) or []
+        for p in model["params"]:
+            if p["type"] != "IMAGE":
+                continue
+            value = payload.get(p["fieldKey"]) or []
             for i, url in enumerate(value if isinstance(value, list) else [value]):
-                content = await media.read(url, client)
-                ext = media.image_ext(content)
+                content, ext = media.conform(media.read_sync_local(url), p.get("accept"))
                 files.append(("image[]", (f"ref{i}.{ext}", content, f"image/{'jpeg' if ext == 'jpg' else ext}")))
         data = {k: str(v) for k, v in body.items()}
         resp = await client.post(f"{base}/v1/images/edits", data=data, files=files, headers=headers)
@@ -115,6 +116,14 @@ async def submit(local_id: str, user_id: str, model: dict, payload: dict, inputs
     _background.add(task)
     task.add_done_callback(_background.discard)
     return {"taskId": local_id}
+
+
+async def fail_orphans() -> None:
+    """啟動時呼叫：背景任務只存在於行程內，重啟前仍在 RUNNING 的 OpenAI 任務都已遺失。"""
+    await db.execute(
+        """UPDATE tasks SET status='FAILED', error_message='服務重啟或逾時，請重新生成', completed_at=NOW()
+        WHERE provider='openai' AND status='RUNNING'"""
+    )
 
 
 async def drain() -> None:

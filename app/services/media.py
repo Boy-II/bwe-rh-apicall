@@ -107,3 +107,20 @@ def make_thumbnail(url: str, width: int = 480) -> str:
         buf = io.BytesIO()
         thumb.save(buf, "WEBP", quality=82)
     return save_bytes("templates", buf.getvalue(), "webp")
+
+
+def conform(content: bytes, accept: str | None) -> tuple[bytes, str]:
+    """依目標欄位 accept（如 '["JPG","PNG"]'）確保格式；不被接受時轉成 PNG。回傳 (內容, 副檔名)。"""
+    import json
+
+    ext = image_ext(content)
+    try:
+        allowed = {str(x).upper().replace("JPEG", "JPG") for x in json.loads(accept or '["JPG","PNG"]')}
+    except ValueError:
+        allowed = {"JPG", "PNG"}
+    if ext.upper() in allowed:
+        return content, ext
+    with Image.open(io.BytesIO(content)) as im:
+        buf = io.BytesIO()
+        im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB").save(buf, "PNG")
+    return buf.getvalue(), "png"

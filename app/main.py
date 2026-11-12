@@ -44,7 +44,7 @@ from app.routers import (
     prompt,
 )
 from app.services.image_registry import seed_image_models
-from app.services import media
+from app.services import media, openai_images
 from app.services import runninghub
 from app.services.cover_presets import restore_files, apply_cover_presets
 from app.core.paths import ROOT_DIR, COVERS_DIR
@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     await apply_migrations()
     await run_seed()
     await seed_image_models()
+    await openai_images.fail_orphans()
     media.ensure_dirs()
     await apply_cover_presets()
 

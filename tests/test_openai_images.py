@@ -208,5 +208,41 @@ class OpenAIImagesTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn("尚未設定 OpenAI 圖片路由", res.json()["detail"])
 
 
+    async def test_openai_route_rejects_remote_image_urls(self):
+        with patch.object(openai_images, "run", AsyncMock()) as run:
+            res = await self.client.post(
+                "/api/models/submit",
+                json={"modelKey": "omni-gpt-image", "payload": {"prompt": "x", "image": ["https://169.254.169.254.example/a.png"]}},
+            )
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertIn("重新上傳", res.json()["detail"])
+        run.assert_not_called()
+
+    async def test_webp_upload_transcoded_for_rh_model_that_rejects_webp(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (4, 4), "red").save(buf, "WEBP")
+        url = media.save_bytes("uploads", buf.getvalue(), "webp")
+        with patch.object(models.model_api, "upload", AsyncMock(return_value="https://rh.test/u.png")) as up, \
+                patch.object(models.model_api, "submit", AsyncMock(return_value={"taskId": "R7"})):
+            res = await self.client.post(
+                "/api/models/submit",
+                json={"modelKey": "gemini-pro-image", "payload": {"prompt": "x", "imageUrls": [url]}},
+            )
+        self.assertEqual(res.status_code, 200, res.text)
+        name, content, mime = up.call_args.args
+        self.assertEqual(mime, "image/png")
+        self.assertTrue(name.endswith(".png"))
+        self.assertEqual(Image.open(io.BytesIO(content)).format, "PNG")
+
+    async def test_startup_fails_orphaned_running_tasks(self):
+        await self._task("L1")
+        await self._task("L2", status="SUCCESS")
+        await openai_images.fail_orphans()
+        rows = {r["id"]: (r["status"], r["error_message"]) for r in await db.fetch_all("SELECT id,status,error_message FROM tasks")}
+        self.assertEqual(rows["L1"][0], "FAILED")
+        self.assertIn("服務重啟", rows["L1"][1])
+        self.assertEqual(rows["L2"][0], "SUCCESS")
+
+
 if __name__ == "__main__":
     unittest.main()
