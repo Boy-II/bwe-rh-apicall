@@ -56,6 +56,19 @@ class TemplateBrowseTests(TemplatesBase):
         )
         self.assertEqual({c["id"]: c["count"] for c in data}["packaging"], 1)
 
+    async def test_category_migration_moves_templates_instead_of_dropping(self):
+        from pathlib import Path
+        sql = (Path(templates.__file__).parents[1] / "migrations/018_template_categories_v2.sql").read_text()
+        await db.execute(
+            "INSERT INTO template_categories(id,name,sort_order) VALUES('design-scene','設計情境',3),('portrait','寫實人像',5),('portrait-edit','人像編輯',6)"
+        )
+        await add_template("d", category="design-scene")
+        await add_template("p", category="portrait")
+        await add_template("e", category="portrait-edit")
+        await db.execute(sql)
+        rows = dict((r["id"], r["category_id"]) for r in await db.fetch_all("SELECT id, category_id FROM templates"))
+        self.assertEqual(rows, {"d": "commercial-photo", "p": "commercial-photo", "e": "creative"})
+
     async def test_filter_by_category_tag_mode_and_paginate(self):
         for i in range(45):
             await add_template(f"p{i:02d}", category="ad-kv", tags=["產品"], age=i)
