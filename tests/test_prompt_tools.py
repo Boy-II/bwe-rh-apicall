@@ -25,6 +25,18 @@ class PromptToolUnitTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("換成海邊", user)
         self.assertIn("old", user)
 
+    async def test_translate_keeps_inner_code_blocks(self):
+        reply = '建立品牌聖誕樹：\n```json\n{"brand": "X"}\n```\n結尾說明'
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value=reply)):
+            self.assertEqual(await prompt_tools.translate("Create...", "zh"), reply)
+        wrapped = "```text\n整段翻譯\n```"
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value=wrapped)):
+            self.assertEqual(await prompt_tools.translate("x", "zh"), "整段翻譯")
+
+    async def test_optimize_prefers_prompt_block_over_inner_json(self):
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value="```json\n{}\n```\n```prompt\nNEW\n```")):
+            self.assertEqual(await prompt_tools.optimize("old", "r", "generic"), "NEW")
+
     async def test_translate_zh_asks_for_traditional(self):
         with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value="一隻狐狸")) as c:
             self.assertEqual(await prompt_tools.translate("a fox", "zh"), "一隻狐狸")
