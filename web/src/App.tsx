@@ -30,7 +30,7 @@ export interface GeneratePrefill {
 export type Route =
   | { kind: 'gallery' }
   | { kind: 'favorites' }
-  | { kind: 'generate'; templateId?: string; prefill?: GeneratePrefill; nonce?: number }
+  | { kind: 'generate'; templateId?: string; prefill?: GeneratePrefill; nonce?: number; returnTo?: 'gallery' | 'favorites' | 'history' }
   | { kind: 'apps' }
   | { kind: 'task'; card: Card; prefill?: RerunPrefill }
   | { kind: 'history' }
@@ -94,11 +94,16 @@ function App() {
             key={route.kind}
             favoritesOnly={route.kind === 'favorites'}
             refreshKey={galleryRefresh}
-            onUse={(templateId) => setRoute({ kind: 'generate', templateId, nonce: Date.now() })}
+            onUse={(templateId) => setRoute({ kind: 'generate', templateId, nonce: Date.now(), returnTo: route.kind })}
             onEdit={(id, onSaved) => setEditing({ id, onSaved })}
           />
         ) : route.kind === 'generate' ? (
-          <GeneratePage key={route.nonce} templateId={route.templateId} prefill={route.prefill} />
+          <GeneratePage
+            key={route.nonce}
+            templateId={route.templateId}
+            prefill={route.prefill}
+            onBack={() => setRoute({ kind: route.returnTo ?? 'gallery' })}
+          />
         ) : route.kind === 'new-template' ? (
           <NewTemplatePage onCreated={() => setGalleryRefresh((n) => n + 1)} />
         ) : route.kind === 'apps' ? (
@@ -107,7 +112,7 @@ function App() {
           <TaskHistoryView
             onBack={() => setRoute({ kind: 'gallery' })}
             onRerun={(card, prefill) => setRoute({ kind: 'task', card, prefill })}
-            onRerunModel={(prefill) => setRoute({ kind: 'generate', prefill, nonce: Date.now() })}
+            onRerunModel={(prefill) => setRoute({ kind: 'generate', prefill, nonce: Date.now(), returnTo: 'history' })}
           />
         ) : null}
       </AppShell>

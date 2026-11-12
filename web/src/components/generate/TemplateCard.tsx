@@ -50,7 +50,12 @@ export function TemplateCard({ template, onChange, onInsert, onClose }: Props) {
             </button>
           )}
         </div>
-        <p className="line-clamp-6 whitespace-pre-wrap break-words text-xs leading-relaxed">
+        <p
+          tabIndex={0}
+          role="region"
+          aria-label={label}
+          className="max-h-40 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pr-2 text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-sky-500"
+        >
           {text || <span className="text-muted-foreground">（尚無）</span>}
         </p>
       </div>

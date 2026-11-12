@@ -26,6 +26,9 @@ export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete }: 
             </span>
           )}
         </div>
+        <div className="px-3 pb-2 font-mono text-[10px] leading-tight text-muted-foreground" aria-label={`卡片編號：${t.id}`}>
+          #{t.id}
+        </div>
       </button>
       {t.modelLabel && (
         <span

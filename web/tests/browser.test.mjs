@@ -195,7 +195,7 @@ test('gallery template opens the generate page and inserts its prompt', async ()
     assert.equal(await card.getByRole('button', { name: '帶入' }).count(), 1);
     assert.equal(await card.getByRole('button', { name: '產生' }).count(), 1);
     await card.getByRole('button', { name: '帶入' }).click();
-    assert.equal(await page.getByLabel('提示詞').inputValue(), template.promptEn);
+    assert.equal(await page.getByRole('textbox', { name: '提示詞', exact: true }).inputValue(), template.promptEn);
     await page.screenshot({ path: '/tmp/rhapi-generate.png', fullPage: true });
   } finally {
     await context.close();

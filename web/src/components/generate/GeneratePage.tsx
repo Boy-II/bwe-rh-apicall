@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Send, Sparkles } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
@@ -19,6 +19,7 @@ import { SaveTemplateDialog } from './SaveTemplateDialog';
 interface Props {
   templateId?: string;
   prefill?: GeneratePrefill;
+  onBack: () => void;
 }
 
 const defaultsOf = (m: ImageModel | undefined) =>
@@ -26,7 +27,7 @@ const defaultsOf = (m: ImageModel | undefined) =>
     (m?.params || []).filter((p) => p.defaultValue !== undefined).map((p) => [p.fieldKey, p.defaultValue!]),
   ) as Record<string, ModelValue>;
 
-export function GeneratePage({ templateId, prefill }: Props) {
+export function GeneratePage({ templateId, prefill, onBack }: Props) {
   const [models, setModels] = useState<ImageModel[]>([]);
   const [displayName, setDisplayName] = useState('');
   const [values, setValues] = useState<Record<string, ModelValue>>({});
@@ -169,7 +170,12 @@ export function GeneratePage({ templateId, prefill }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      <h1 className="mb-4 text-2xl font-semibold">AI 生圖</h1>
+      <div className="mb-4 flex items-center gap-3">
+        <Button type="button" variant="outline" size="sm" onClick={onBack}>
+          <ArrowLeft className="size-4" /> 返回上一頁
+        </Button>
+        <h1 className="text-2xl font-semibold">AI 生圖</h1>
+      </div>
       {error && (
         <p role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           {error}
