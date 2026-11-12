@@ -41,6 +41,7 @@ from app.routers import (
     models,
     admin_models,
     templates,
+    prompt,
 )
 from app.services.image_registry import seed_image_models
 from app.services import media
@@ -116,6 +117,7 @@ app.include_router(proxy.router)
 app.include_router(models.router)
 app.include_router(admin_models.router)
 app.include_router(templates.router)
+app.include_router(prompt.router)
 
 
 # ===== 靜態檔案 =====

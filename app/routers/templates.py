@@ -1,8 +1,13 @@
 """提示詞範本庫：瀏覽、搜尋、收藏。"""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.core import auth, db
+from app.core.rate_limit import rate_limit
+from app.services import prompt_tools
 
 router = APIRouter()
 
@@ -165,3 +170,33 @@ async def remove_favorite(template_id: str, user_id: str = Depends(auth.require_
     )
     await _sync_favorite_count(template_id)
     return {"favorited": False}
+
+
+class FillBody(BaseModel):
+    lang: Literal["en", "zh"]
+
+
+@router.post(
+    "/api/templates/{template_id}/fill-language",
+    dependencies=[Depends(rate_limit("prompt", 30, 60))],
+)
+async def fill_language(template_id: str, body: FillBody, _user: str = Depends(auth.require_user)):
+    """補上缺少的語言版本；只寫入空欄位，絕不覆蓋既有內容。"""
+    row = await db.fetch_one("SELECT prompt_en, prompt_zh FROM templates WHERE id=$1", template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="範本不存在")
+    col = "prompt_en" if body.lang == "en" else "prompt_zh"
+    other = row["prompt_zh"] if body.lang == "en" else row["prompt_en"]
+    if row[col]:
+        return {"text": row[col], "generated": False}
+    if not other:
+        raise HTTPException(status_code=400, detail="範本沒有可翻譯的提示詞")
+    text = await prompt_tools.translate(other, body.lang)
+    updated = await db.execute(
+        f"UPDATE templates SET {col}=$2, updated_at=NOW() WHERE id=$1 AND {col}=''",
+        template_id,
+        text,
+    )
+    if updated == "UPDATE 0":
+        return {"text": await db.fetch_val(f"SELECT {col} FROM templates WHERE id=$1", template_id), "generated": False}
+    return {"text": text, "generated": True}
