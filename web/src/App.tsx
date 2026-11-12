@@ -7,6 +7,7 @@ import { AppsPage } from '@/components/HomePage';
 import { TaskView } from '@/components/TaskView';
 import { TaskHistoryView } from '@/components/TaskHistoryView';
 import { AppShell, type NavKey } from '@/components/layout/AppShell';
+import { GalleryPage } from '@/components/gallery/GalleryPage';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -80,7 +81,13 @@ function App() {
         onOpenModels={() => setModelsOpen(true)}
         onOpenCategories={() => setCategoriesOpen(true)}
       >
-        {route.kind === 'apps' ? (
+        {route.kind === 'gallery' || route.kind === 'favorites' ? (
+          <GalleryPage
+            key={route.kind}
+            favoritesOnly={route.kind === 'favorites'}
+            onUse={(templateId) => setRoute({ kind: 'generate', templateId, nonce: Date.now() })}
+          />
+        ) : route.kind === 'apps' ? (
           <AppsPage onSelect={(card) => setRoute({ kind: 'task', card })} />
         ) : route.kind === 'history' ? (
           <TaskHistoryView
