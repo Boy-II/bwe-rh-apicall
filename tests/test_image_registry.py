@@ -61,5 +61,92 @@ class ImageRegistryTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         )
 
 
+
+from unittest.mock import AsyncMock, patch
+
+import httpx
+from fastapi import FastAPI
+
+from app.core import auth, config
+from app.routers import admin_models, models as models_router
+
+OPENAI_MODEL = {
+    "key": "omni-gpt-text",
+    "displayName": "Omni GPT",
+    "mode": "text-to-image",
+    "provider": "openai",
+    "upstream": "gpt-image-2",
+    "profile": "gpt-image-2",
+    "params": [{"fieldKey": "prompt", "type": "STRING", "required": True}],
+    "enabled": True,
+    "sortOrder": 20,
+}
+
+
+class AdminModelsRoutes(PostgresMixin, unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        await image_registry.seed_image_models()
+        self.app = FastAPI()
+        self.app.include_router(admin_models.router)
+        self.app.include_router(models_router.router)
+        self.app.dependency_overrides[auth.require_user] = lambda: "u1"
+        self.app.dependency_overrides[auth.require_admin] = lambda: "admin"
+        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://test")
+        self.addAsyncCleanup(self.client.aclose)
+        for k in ("openai_image_base_url", "openai_image_api_key"):
+            self.addCleanup(config.set_db_setting, k, "")
+
+    async def test_admin_create_openai_model_then_listed_for_users(self):
+        res = await self.client.post("/api/admin/image-models", json=OPENAI_MODEL)
+        self.assertEqual(res.status_code, 200, res.text)
+        admin_list = (await self.client.get("/api/admin/image-models")).json()
+        self.assertEqual(admin_list[-1]["upstream"], "gpt-image-2")
+        user_list = (await self.client.get("/api/image-models")).json()
+        self.assertIn("omni-gpt-text", [m["key"] for m in user_list])
+        res = await self.client.patch("/api/admin/image-models/omni-gpt-text", json={"enabled": False})
+        self.assertEqual(res.status_code, 200, res.text)
+        user_list = (await self.client.get("/api/image-models")).json()
+        self.assertNotIn("omni-gpt-text", [m["key"] for m in user_list])
+        self.assertEqual((await self.client.delete("/api/admin/image-models/omni-gpt-text")).status_code, 200)
+        self.assertIsNone(await image_registry.get("omni-gpt-text"))
+        self.assertEqual((await self.client.post("/api/admin/image-models", json={**OPENAI_MODEL, "key": "Bad Key"})).status_code, 400)
+
+    async def test_reject_params_without_prompt(self):
+        body = {**OPENAI_MODEL, "params": [{"fieldKey": "size", "type": "LIST", "options": []}]}
+        res = await self.client.post("/api/admin/image-models", json=body)
+        self.assertEqual(res.status_code, 400)
+        body = {**OPENAI_MODEL, "params": [{"fieldKey": "prompt", "type": "WEIRD"}]}
+        self.assertEqual((await self.client.post("/api/admin/image-models", json=body)).status_code, 400)
+
+    async def test_reject_i2i_without_image_param(self):
+        body = {**OPENAI_MODEL, "key": "omni-i2i", "mode": "image-to-image"}
+        res = await self.client.post("/api/admin/image-models", json=body)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("圖片", res.json()["detail"])
+
+    async def test_api_key_blank_keeps_existing(self):
+        await self.client.post("/api/admin/openai-route", json={"baseUrl": "http://omniroute:20128/", "apiKey": "sk-1"})
+        await self.client.post("/api/admin/openai-route", json={"baseUrl": "http://omniroute:20128", "apiKey": ""})
+        self.assertEqual(config.get_openai_image_api_key(), "sk-1")
+        data = (await self.client.get("/api/admin/openai-route")).json()
+        self.assertEqual(data, {"baseUrl": "http://omniroute:20128", "hasApiKey": True})
+        self.assertEqual(await db.fetch_val("SELECT value FROM settings WHERE key='openai_image_api_key'"), "sk-1")
+
+    async def test_route_models_lists_upstream(self):
+        config.set_db_setting("openai_image_base_url", "http://omni.test")
+        with patch.object(admin_models.llm, "fetch_models", AsyncMock(return_value=["gpt-image-2"])) as fm, \
+                patch.object(admin_models.runninghub, "client", lambda: None):
+            res = await self.client.post("/api/admin/openai-route/models")
+        self.assertEqual(res.json(), {"models": ["gpt-image-2"]})
+        self.assertEqual(fm.call_args.args[1], "http://omni.test")
+
+    async def test_non_admin_forbidden(self):
+        del self.app.dependency_overrides[auth.require_admin]
+        with patch.object(auth, "is_admin_token_valid", AsyncMock(return_value=False)):
+            res = await self.client.get("/api/admin/image-models")
+        self.assertEqual(res.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()
