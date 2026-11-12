@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from app.core import db
+from app.services import media
 
 _CATALOG = json.loads(
     (Path(__file__).parents[1] / "data/image_models.json").read_text()
@@ -31,6 +31,8 @@ def get_model(key: str) -> dict:
 
 
 def _image_url(value):
+    if media.local_path(value) is not None:
+        return
     if not isinstance(value, str) or len(value) > 8192:
         raise ValueError("圖片必須是上傳後的 HTTPS URL")
     url = urlsplit(value)
@@ -88,36 +90,4 @@ def validate_payload(model: dict, payload: dict) -> dict:
         out.get(p["fieldKey"]) for p in params.values() if p["type"] == "IMAGE"
     ):
         raise ValueError("圖生圖至少需要一張參考圖片")
-    if model["profile"] == "seedream":
-        if out.get("resolution") == "empty":
-            out.pop("resolution")
-            width, height = out["width"], out["height"]
-            if (
-                not 921600 <= width * height <= 4194304
-                or not 1 / 16 <= width / height <= 16
-            ):
-                raise ValueError(
-                    "Seedream 自訂尺寸：總像素須介於 921600–4194304，寬高比須介於 1:16–16:1"
-                )
-        else:
-            # Resolution takes precedence; do not imply width/height are applied.
-            out.pop("width", None)
-            out.pop("height", None)
     return out
-
-
-async def seed_model_cards():
-    for index, model in enumerate(_MODELS.values()):
-        await db.execute(
-            """INSERT INTO cards(id,webapp_id,title,description,icon,color,card_type,category,image_mode,model_key,prompt_profile,sort_order)
-            VALUES($1,'',$2,$3,'🎨','#6C5CE7','model','image',$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING""",
-            "model:" + model["key"],
-            model["title"],
-            "使用提示詞生成圖片"
-            if model["mode"] == "text-to-image"
-            else "上傳參考圖片並描述修改需求",
-            model["mode"],
-            model["key"],
-            model["profile"],
-            1000 + index,
-        )

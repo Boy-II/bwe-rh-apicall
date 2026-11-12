@@ -75,22 +75,14 @@ class ModelValidationTests(unittest.TestCase):
                     {"prompt": "cat", "imageUrls": image, "aspectRatio": "empty"},
                 )
 
-    def test_seedream_custom_dimensions_omit_resolution_and_enforce_total_pixels(self):
-        model = model_catalog.get_model("seedream-text")
-        out = model_catalog.validate_payload(
-            model,
-            {"prompt": "cat", "resolution": "empty", "width": 1280, "height": 720},
-        )
-        self.assertNotIn("resolution", out)
-        self.assertEqual((out["width"], out["height"]), (1280, 720))
-        for width, height in [(240, 240), (8192, 8192), (8192, 240)]:
+    def test_image_accepts_local_media_url(self):
+        model = model_catalog.get_model("gpt-image-2-image")
+        url = "/covers/media/uploads/" + "a" * 32 + ".png"
+        out = model_catalog.validate_payload(model, {"prompt": "x", "imageUrls": [url]})
+        self.assertEqual(out["imageUrls"], [url])
+
+    def test_image_rejects_non_media_local_path(self):
+        model = model_catalog.get_model("gpt-image-2-image")
+        for bad in ("/covers/other.png", "/etc/passwd"):
             with self.assertRaises(ValueError):
-                model_catalog.validate_payload(
-                    model,
-                    {
-                        "prompt": "cat",
-                        "resolution": "empty",
-                        "width": width,
-                        "height": height,
-                    },
-                )
+                model_catalog.validate_payload(model, {"prompt": "x", "imageUrls": [bad]})

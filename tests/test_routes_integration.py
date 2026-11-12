@@ -10,9 +10,20 @@ from PIL import Image
 
 from app.core import auth, db
 from app.routers import cards, models, proxy, users
-from app.services.model_catalog import seed_model_cards
+from app.services.image_registry import seed_image_models
 from app.services.cover_presets import export_presets, apply_cover_presets
 from tests.pg_support import PostgresMixin
+
+
+async def insert_legacy_model_cards():
+    for key, mode in (("gemini-pro-text", "text-to-image"), ("gemini-pro-image", "image-to-image")):
+        await db.execute(
+            """INSERT INTO cards(id,webapp_id,title,card_type,category,image_mode,model_key,hidden)
+            VALUES($1,'',$2,'model','image',$3,$2,TRUE) ON CONFLICT(id) DO NOTHING""",
+            "model:" + key,
+            key,
+            mode,
+        )
 
 
 class RoutesIntegration(PostgresMixin, unittest.IsolatedAsyncioTestCase):
@@ -51,7 +62,8 @@ class RoutesIntegration(PostgresMixin, unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        await seed_model_cards()
+        await seed_image_models()
+        await insert_legacy_model_cards()
         self.app = FastAPI()
         for router in (cards.router, models.router, proxy.router, users.router):
             self.app.include_router(router)
@@ -67,27 +79,6 @@ class RoutesIntegration(PostgresMixin, unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
         await super().asyncTearDown()
-
-    async def test_seed_does_not_resurrect_removed_or_overwrite_admin_edit(self):
-        res = await self.client.put(
-            "/api/admin/cards/model:gemini-pro-text",
-            json={"title": "Custom", "category": "video"},
-        )
-        self.assertEqual(res.status_code, 200, res.text)
-        self.assertEqual(res.json()["category"], "image")
-        await self.client.delete("/api/admin/cards/model:gemini-pro-text")
-        await seed_model_cards()
-        self.assertEqual(
-            await db.fetch_val(
-                "SELECT title FROM cards WHERE id='model:gemini-pro-text'"
-            ),
-            "Custom",
-        )
-        self.assertFalse(
-            await db.fetch_val(
-                "SELECT enabled FROM cards WHERE id='model:gemini-pro-text'"
-            )
-        )
 
     async def test_model_submit_query_history_and_other_user_isolation(self):
         with patch.object(
