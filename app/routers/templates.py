@@ -4,7 +4,7 @@ import re
 import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core import auth, db
@@ -401,3 +401,49 @@ async def update_category(category_id: str, body: CategoryPatch, _: str = Depend
 async def delete_category(category_id: str, _: str = Depends(auth.require_admin)):
     await db.execute("DELETE FROM template_categories WHERE id=$1", category_id)
     return {"success": True}
+
+
+@router.post("/api/admin/templates")
+async def admin_create_template(
+    request: Request,
+    file: UploadFile = File(...),
+    promptZh: str = Form(""),
+    promptEn: str = Form(""),
+    title: str = Form(""),
+    categoryId: str = Form(""),
+    mode: str = Form(""),
+    _: str = Depends(auth.require_admin),
+):
+    """管理員手動新增範本；標題／分類／模式未填時由 AI 依提示詞判斷。"""
+    promptZh, promptEn = promptZh.strip(), promptEn.strip()
+    if not promptZh and not promptEn:
+        raise HTTPException(status_code=400, detail="請至少填寫中文或英文提示詞")
+    if mode and mode not in ("t2i", "i2i", "edit"):
+        raise HTTPException(status_code=400, detail="模式不正確")
+    await _valid_category(categoryId or None)
+    content = await file.read(20 * 1024 * 1024 + 1)
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="圖片超過 20 MB")
+    try:
+        media.image_ext(content)
+    except media.MediaError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    tags: list[str] = []
+    if not (title.strip() and categoryId and mode):
+        categories = await db.fetch_all("SELECT id, name FROM template_categories ORDER BY sort_order, id")
+        try:
+            meta = await prompt_tools.suggest_meta(promptZh or promptEn, categories, hint_title=title.strip())
+        except ValueError as e:
+            raise HTTPException(status_code=502, detail=f"AI 判斷失敗，請手動填寫標題與分類：{e}") from None
+        title = title.strip() or meta["title"]
+        categoryId = categoryId or meta["categoryId"]
+        mode = mode or meta["mode"]
+        tags = meta["tags"]
+    image_url, thumb_url = await _store_image(content)
+    template_id = secrets.token_hex(8)
+    await db.execute(
+        """INSERT INTO templates(id,title,category_id,tags,mode,prompt_en,prompt_zh,image_url,thumb_url)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+        template_id, title.strip()[:60], categoryId, tags, mode, promptEn, promptZh, image_url, thumb_url,
+    )
+    return detail(await fetch_detail(template_id, ""), "", True)

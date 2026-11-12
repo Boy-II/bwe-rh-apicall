@@ -235,5 +235,41 @@ class TemplateManageTests(TemplatesBase):
         self.assertEqual(bad.status_code, 400)
 
 
+    async def test_admin_create_template_with_ai_fill(self):
+        meta = {"title": "AI 標題", "categoryId": "anime", "tags": ["二次元"], "mode": "i2i"}
+        with patch.object(templates.prompt_tools, "suggest_meta", AsyncMock(return_value=meta)) as sm:
+            res = await self.client.post(
+                "/api/admin/templates",
+                data={"promptZh": "把照片轉成二次元角色", "promptEn": ""},
+                files={"file": ("a.png", png(), "image/png")},
+            )
+        self.assertEqual(res.status_code, 200, res.text)
+        d = res.json()
+        self.assertEqual((d["title"], d["categoryId"], d["mode"], d["promptZh"], d["promptEn"]),
+                         ("AI 標題", "anime", "i2i", "把照片轉成二次元角色", ""))
+        self.assertTrue(d["thumbUrl"].endswith(".webp"))
+        self.assertEqual(sm.call_args.args[0], "把照片轉成二次元角色")
+
+    async def test_admin_create_template_uses_given_fields_without_ai(self):
+        with patch.object(templates.prompt_tools, "suggest_meta", AsyncMock()) as sm:
+            res = await self.client.post(
+                "/api/admin/templates",
+                data={"promptEn": "a poster", "title": "手動", "categoryId": "poster-banner", "mode": "t2i"},
+                files={"file": ("a.png", png(), "image/png")},
+            )
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual((res.json()["title"], res.json()["categoryId"]), ("手動", "poster-banner"))
+        sm.assert_not_called()
+
+    async def test_admin_create_template_validation(self):
+        res = await self.client.post("/api/admin/templates", data={"promptZh": " ", "promptEn": ""},
+                                     files={"file": ("a.png", png(), "image/png")})
+        self.assertEqual(res.status_code, 400)
+        res = await self.client.post("/api/admin/templates", data={"promptEn": "x", "title": "t", "categoryId": "anime"},
+                                     files={"file": ("a.png", b"nope", "image/png")})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

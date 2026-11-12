@@ -200,6 +200,36 @@ test('gallery template opens the generate page and inserts its prompt', async ()
   }
 });
 
+test('admin adds a template with prompt and dropped image', async () => {
+  let posted = null;
+  const { page, context } = await pageFixture(async (route, path) => {
+    if (path === '/api/admin/templates' && route.request().method() === 'POST') {
+      posted = route.request().postData() || '';
+      await route.fulfill({ json: { ...template, id: 'new1', title: 'AI 標題' } });
+      return true;
+    }
+  });
+  try {
+    await page.getByRole('navigation', { name: '主選單' }).locator('..').getByRole('button', { name: '新增範本' }).click();
+    await page.getByRole('heading', { name: '新增範本' }).waitFor();
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 8;
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await page.locator('input[type=file]').setInputFiles({ name: 'x.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await page.getByAltText('示例圖片預覽').waitFor();
+    await page.getByLabel('中文提示詞').fill('一張夏日海報');
+    await page.getByRole('button', { name: '新增到提示詞庫' }).click();
+    await page.getByText('已新增「AI 標題」').waitFor();
+    assert.ok(posted.includes('一張夏日海報'));
+    assert.ok(posted.includes('name="file"'));
+  } finally {
+    await context.close();
+  }
+});
+
 test('AI apps page has no category switch and lists app cards', async () => {
   const { page, context } = await pageFixture();
   try {

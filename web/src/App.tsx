@@ -12,6 +12,7 @@ import { GeneratePage } from '@/components/generate/GeneratePage';
 import { ModelRegistryModal } from '@/components/admin/ModelRegistryModal';
 import { CategoryManageModal } from '@/components/admin/CategoryManageModal';
 import { TemplateEditDialog } from '@/components/admin/TemplateEditDialog';
+import { NewTemplatePage } from '@/components/admin/NewTemplatePage';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -32,7 +33,8 @@ export type Route =
   | { kind: 'generate'; templateId?: string; prefill?: GeneratePrefill; nonce?: number }
   | { kind: 'apps' }
   | { kind: 'task'; card: Card; prefill?: RerunPrefill }
-  | { kind: 'history' };
+  | { kind: 'history' }
+  | { kind: 'new-template' };
 
 function App() {
   const user = useAuth((s) => s.user);
@@ -97,6 +99,8 @@ function App() {
           />
         ) : route.kind === 'generate' ? (
           <GeneratePage key={route.nonce} templateId={route.templateId} prefill={route.prefill} />
+        ) : route.kind === 'new-template' ? (
+          <NewTemplatePage onCreated={() => setGalleryRefresh((n) => n + 1)} />
         ) : route.kind === 'apps' ? (
           <AppsPage onSelect={(card) => setRoute({ kind: 'task', card })} />
         ) : route.kind === 'history' ? (

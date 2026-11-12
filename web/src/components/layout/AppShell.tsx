@@ -5,6 +5,7 @@ import {
   Cpu,
   Heart,
   History,
+  ImagePlus,
   LogOut,
   Menu,
   Settings,
@@ -19,7 +20,7 @@ import { BalancePill } from '../BalancePill';
 import { UserManageModal } from '../UserManageModal';
 import { AiConfigModal } from '../AiConfigModal';
 
-export type NavKey = 'gallery' | 'favorites' | 'generate' | 'apps' | 'history';
+export type NavKey = 'gallery' | 'favorites' | 'generate' | 'apps' | 'history' | 'new-template';
 
 const NAV: { key: NavKey; label: string; icon: ReactNode }[] = [
   { key: 'gallery', label: '提示詞庫', icon: <BookImage className="size-4" /> },
@@ -76,6 +77,7 @@ export function AppShell({ active, onNavigate, onOpenModels, onOpenCategories, c
       {admin && (
         <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
           <div className="px-3 pb-1 text-xs text-muted-foreground">管理</div>
+          {item('新增範本', <ImagePlus className="size-4" />, () => onNavigate('new-template'), active === 'new-template')}
           {item('模型管理', <Cpu className="size-4" />, () => onOpenModels?.())}
           {item('分類管理', <Tags className="size-4" />, () => onOpenCategories?.())}
           {item('用戶', <Users className="size-4" />, () => setUsersOpen(true))}

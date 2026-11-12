@@ -428,6 +428,12 @@ export const adminModels = {
 };
 
 export const adminTemplates = {
+  create: (body: { file: File; promptZh: string; promptEn: string; title: string; categoryId: string; mode: string }) => {
+    const fd = new FormData();
+    fd.append('file', body.file);
+    for (const k of ['promptZh', 'promptEn', 'title', 'categoryId', 'mode'] as const) fd.append(k, body[k]);
+    return request<TemplateDetail>('/api/admin/templates', { method: 'POST', admin: true, body: fd });
+  },
   replaceImage: (id: string, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
