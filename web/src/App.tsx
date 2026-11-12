@@ -9,6 +9,9 @@ import { TaskHistoryView } from '@/components/TaskHistoryView';
 import { AppShell, type NavKey } from '@/components/layout/AppShell';
 import { GalleryPage } from '@/components/gallery/GalleryPage';
 import { GeneratePage } from '@/components/generate/GeneratePage';
+import { ModelRegistryModal } from '@/components/admin/ModelRegistryModal';
+import { CategoryManageModal } from '@/components/admin/CategoryManageModal';
+import { TemplateEditDialog } from '@/components/admin/TemplateEditDialog';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -38,6 +41,8 @@ function App() {
   const [route, setRoute] = useState<Route>({ kind: 'gallery' });
   const [modelsOpen, setModelsOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; onSaved: () => void } | null>(null);
+  const [galleryRefresh, setGalleryRefresh] = useState(0);
 
   useEffect(() => {
     initTheme();
@@ -86,7 +91,9 @@ function App() {
           <GalleryPage
             key={route.kind}
             favoritesOnly={route.kind === 'favorites'}
+            refreshKey={galleryRefresh}
             onUse={(templateId) => setRoute({ kind: 'generate', templateId, nonce: Date.now() })}
+            onEdit={(id, onSaved) => setEditing({ id, onSaved })}
           />
         ) : route.kind === 'generate' ? (
           <GeneratePage key={route.nonce} templateId={route.templateId} prefill={route.prefill} />
@@ -100,8 +107,17 @@ function App() {
           />
         ) : null}
       </AppShell>
-      {/* modelsOpen / categoriesOpen：Task 15 接上管理介面 */}
-      {modelsOpen && categoriesOpen && null}
+      <ModelRegistryModal open={modelsOpen} onClose={() => setModelsOpen(false)} />
+      <CategoryManageModal
+        open={categoriesOpen}
+        onClose={() => setCategoriesOpen(false)}
+        onChanged={() => setGalleryRefresh((n) => n + 1)}
+      />
+      <TemplateEditDialog
+        templateId={editing?.id ?? null}
+        onClose={() => setEditing(null)}
+        onSaved={() => editing?.onSaved()}
+      />
       <Toaster richColors position="top-right" />
     </>
   );
