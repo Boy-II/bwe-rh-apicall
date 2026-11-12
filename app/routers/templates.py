@@ -106,7 +106,9 @@ async def list_templates(
         where.append(f"t.category_id = {arg(category)}")
     if tag:
         where.append(f"{arg(tag)} = ANY(t.tags)")
-    if mode:
+    if mode == "i2i":
+        where.append("t.mode IN ('i2i','edit')")  # 介面只分文生圖／圖生圖，編輯歸圖生圖
+    elif mode:
         where.append(f"t.mode = {arg(mode)}")
     if q.strip():
         p = arg("%" + escape_like(q.strip()) + "%")

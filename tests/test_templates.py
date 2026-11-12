@@ -51,7 +51,8 @@ class TemplateBrowseTests(TemplatesBase):
         data = (await self.client.get("/api/template-categories")).json()
         self.assertEqual(
             [c["name"] for c in data],
-            ["廣告主視覺", "海報・Banner", "辦公簡報", "設計情境", "包裝設計・刀模", "寫實人像", "人像編輯", "創意"],
+            ["廣告主視覺", "海報・Banner", "辦公簡報", "商業攝影", "包裝設計", "二次元", "風格轉換",
+             "換臉", "換裝", "創意"],
         )
         self.assertEqual({c["id"]: c["count"] for c in data}["packaging"], 1)
 
@@ -66,6 +67,9 @@ class TemplateBrowseTests(TemplatesBase):
         self.assertEqual((len(page2["items"]), page2["nextOffset"]), (5, None))
         self.assertEqual([x["id"] for x in (await self.client.get("/api/templates?tag=3D")).json()["items"]], ["other"])
         self.assertEqual([x["id"] for x in (await self.client.get("/api/templates?mode=i2i")).json()["items"]], ["other"])
+        await add_template("edited", mode="edit")
+        ids = [x["id"] for x in (await self.client.get("/api/templates?mode=i2i")).json()["items"]]
+        self.assertEqual(sorted(ids), ["edited", "other"])
         self.assertEqual((await self.client.get("/api/templates?limit=500")).status_code, 422)
 
     async def test_search_matches_title_prompts_and_tags(self):
@@ -108,12 +112,12 @@ class TemplateBrowseTests(TemplatesBase):
         self.assertEqual(items, {"mine": True, "theirs": True})
 
     async def test_detail_and_tags(self):
-        await add_template("a", en="fox", zh="狐狸", tags=["動物", "寫實"], category="portrait")
-        await add_template("b", tags=["動物"], category="portrait")
+        await add_template("a", en="fox", zh="狐狸", tags=["動物", "寫實"], category="anime")
+        await add_template("b", tags=["動物"], category="anime")
         d = (await self.client.get("/api/templates/a")).json()
         self.assertEqual((d["promptEn"], d["promptZh"], d["canEdit"]), ("fox", "狐狸", False))
         self.assertEqual((await self.client.get("/api/templates/zzz")).status_code, 404)
-        tags = (await self.client.get("/api/template-tags?category=portrait")).json()
+        tags = (await self.client.get("/api/template-tags?category=anime")).json()
         self.assertEqual(tags[0], {"tag": "動物", "count": 2})
 
 

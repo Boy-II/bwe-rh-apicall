@@ -105,7 +105,7 @@ export function TemplateEditDialog({ templateId, onClose, onSaved }: Props) {
               </label>
               <label className="block flex-1 space-y-1">
                 <span className="font-medium">模式</span>
-                <select className="h-9 w-full rounded-md border border-input bg-background px-2" value={t.mode} onChange={(e) => setT({ ...t, mode: e.target.value as TemplateMode })}>
+                <select className="h-9 w-full rounded-md border border-input bg-background px-2" value={t.mode === 'edit' ? 'i2i' : t.mode} onChange={(e) => setT({ ...t, mode: e.target.value as TemplateMode })}>
                   <option value="t2i">文生圖</option>
                   <option value="i2i">圖生圖</option>
                   <option value="edit">編輯</option>

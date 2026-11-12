@@ -36,8 +36,8 @@ export function SaveTemplateDialog({ open, taskId, resultIndex, prompt, defaultM
         setTitle((t) => t || m.title);
         setCategoryId(m.categoryId);
         setTags(m.tags.join('、'));
-        if (defaultMode === 't2i') setMode(m.mode === 't2i' ? 't2i' : defaultMode);
-        else setMode(m.mode === 't2i' ? defaultMode : m.mode);
+        // 介面只分文生圖／圖生圖；有參考圖就是圖生圖
+        setMode(defaultMode === 'i2i' || m.mode !== 't2i' ? 'i2i' : 't2i');
       })
       .catch(() => {
         /* 建議失敗就讓使用者自己填 */
@@ -100,7 +100,6 @@ export function SaveTemplateDialog({ open, taskId, resultIndex, prompt, defaultM
               <select className="h-9 w-full rounded-md border border-input bg-background px-2" value={mode} onChange={(e) => setMode(e.target.value as TemplateMode)}>
                 <option value="t2i">文生圖</option>
                 <option value="i2i">圖生圖</option>
-                <option value="edit">編輯</option>
               </select>
             </label>
           </div>

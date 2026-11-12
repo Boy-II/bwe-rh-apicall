@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Heart, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import type { TemplateSummary } from '@/lib/types';
 
-const MODE_LABEL: Record<string, string> = { t2i: '文生圖', i2i: '圖生圖', edit: '編輯' };
+const MODE_LABEL: Record<string, string> = { t2i: '文生圖', i2i: '圖生圖', edit: '圖生圖' };
 
 interface Props {
   t: TemplateSummary;

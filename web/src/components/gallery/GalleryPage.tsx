@@ -16,9 +16,7 @@ interface Props {
 
 export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Props) {
   const [categories, setCategories] = useState<TemplateCategory[]>([]);
-  const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [category, setCategory] = useState('');
-  const [tag, setTag] = useState('');
   const [mode, setMode] = useState('');
   const [input, setInput] = useState('');
   const [q, setQ] = useState('');
@@ -33,10 +31,6 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
     api.templates.categories().then(setCategories).catch((e) => toast.error(e.message));
   }, [refreshKey]);
 
-  useEffect(() => {
-    api.templates.tags(category).then(setTags).catch(() => setTags([]));
-  }, [category, refreshKey]);
-
   // 搜尋輸入停 300ms 後才查詢
   useEffect(() => {
     const t = setTimeout(() => setQ(input), 300);
@@ -48,7 +42,7 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
       const gen = reset ? ++generation.current : generation.current;
       setLoading(true);
       try {
-        const page = await api.templates.list({ category, tag, mode, q, favorites: favoritesOnly, offset });
+        const page = await api.templates.list({ category, mode, q, favorites: favoritesOnly, offset });
         if (gen !== generation.current) return; // 篩選已變更，丟棄舊結果
         setItems((prev) => (reset ? page.items : [...prev, ...page.items]));
         setTotal(page.total);
@@ -59,7 +53,7 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
         if (gen === generation.current) setLoading(false);
       }
     },
-    [category, tag, mode, q, favoritesOnly],
+    [category, mode, q, favoritesOnly],
   );
 
   useEffect(() => {
@@ -126,21 +120,15 @@ export function GalleryPage({ favoritesOnly, onUse, onEdit, refreshKey = 0 }: Pr
       <div className="mb-5">
         <TemplateFilters
           categories={categories}
-          tags={tags}
           category={category}
-          tag={tag}
           mode={mode}
-          onCategory={(id) => {
-            setCategory(id);
-            setTag('');
-          }}
-          onTag={setTag}
+          onCategory={setCategory}
           onMode={setMode}
         />
       </div>
       {items.length === 0 && !loading ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-          {favoritesOnly && !q && !category && !tag && !mode
+          {favoritesOnly && !q && !category && !mode
             ? '點範本右上角的 ♡ 收藏常用範本'
             : '沒有符合的範本'}
         </div>
