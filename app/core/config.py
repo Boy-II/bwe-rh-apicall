@@ -35,6 +35,11 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "") or None
 
+# 本地 ComfyUI（經 Cloudflare Tunnel + Access Service Token）
+COMFYUI_BASE_URL = os.environ.get("COMFYUI_BASE_URL", "").rstrip("/")
+COMFYUI_CF_ACCESS_CLIENT_ID = os.environ.get("COMFYUI_CF_ACCESS_CLIENT_ID", "")
+COMFYUI_CF_ACCESS_CLIENT_SECRET = os.environ.get("COMFYUI_CF_ACCESS_CLIENT_SECRET", "")
+
 # ===== env-overridable：env 為主、無則查 DB settings 表 =====
 _ENV_AI_BASE_URL = os.environ.get("AI_BASE_URL", "")
 _ENV_AI_API_KEY = os.environ.get("AI_API_KEY", "")

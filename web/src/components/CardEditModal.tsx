@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PROMPT_PROFILES } from '@/lib/model-utils';
 import { PALETTE, isVideoCover } from '@/lib/card-utils';
 import { compressImageToJpegFile } from '@/lib/image-compress';
+import { parseComfyWorkflow } from '@/lib/comfy-utils';
 import type { Card, EditableField, NodeInfo } from '@/lib/types';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -116,14 +117,61 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
   const [nodes, setNodes] = useState<NodeInfo[]>([]); // workflow 載入的節點
   const [loadingNodes, setLoadingNodes] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const comfyFileRef = useRef<HTMLInputElement>(null);
+  // 本地 ComfyUI：編輯中的完整 workflow（API 格式）；dirty=有修改需要存回
+  const [comfyWf, setComfyWf] = useState<Record<string, ComfyNode> | null>(null);
+  const [comfyDirty, setComfyDirty] = useState(false);
   const isEdit = !!card;
+  const isComfy = form.cardType === 'workflow' && form.instanceType === 'comfyui';
 
   useEffect(() => {
     if (open) {
       setForm(card ? { ...card } : { ...empty });
       setNodes([]);
+      setComfyWf(null);
+      setComfyDirty(false);
     }
   }, [open, card]);
+
+  const applyComfyWorkflow = (text: string, dirty: boolean) => {
+    const { workflow, nodes: list } = parseComfyWorkflow(text);
+    setComfyWf(workflow as Record<string, ComfyNode>);
+    setComfyDirty(dirty);
+    setNodes(list);
+    // 移除已不存在於新 workflow 的公開欄位
+    const keys = new Set(list.map(fieldKey));
+    setForm((f) => ({ ...f, editableFields: (f.editableFields || []).filter((e) => keys.has(fieldKey(e))) }));
+    return list;
+  };
+
+  const onPickComfyFile = async (file: File) => {
+    try {
+      const list = applyComfyWorkflow(await file.text(), true);
+      toast.success(`已讀取 workflow，共 ${list.length} 個可設定欄位`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  /** 修改不公開欄位的值（直接寫進 workflow） */
+  const setComfyValue = (n: NodeInfo, raw: string) => {
+    if (!comfyWf) return;
+    const node = comfyWf[n.nodeId];
+    const original = node.inputs[n.fieldName];
+    let value: unknown = raw;
+    if (typeof original === 'number') {
+      const num = Number(raw);
+      if (raw.trim() === '' || Number.isNaN(num)) return;
+      value = Number.isInteger(original) ? Math.trunc(num) : num;
+    } else if (typeof original === 'boolean') {
+      value = raw === 'true';
+    }
+    setComfyWf({ ...comfyWf, [n.nodeId]: { ...node, inputs: { ...node.inputs, [n.fieldName]: value } } });
+    setNodes((prev) =>
+      prev.map((x) => (fieldKey(x) === fieldKey(n) ? { ...x, fieldValue: value as NodeInfo['fieldValue'] } : x)),
+    );
+    setComfyDirty(true);
+  };
 
   const set = <K extends keyof Card>(key: K, value: Card[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -152,6 +200,23 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
   };
 
   const loadNodes = async () => {
+    if (isComfy) {
+      if (!isEdit || !card?.hasComfyWorkflow) {
+        toast.error('請先上傳 workflow（API 格式 JSON）');
+        return;
+      }
+      setLoadingNodes(true);
+      try {
+        const { workflow } = await api.cards.comfyWorkflow(card.id);
+        const list = applyComfyWorkflow(JSON.stringify(workflow), false);
+        toast.success(`載入 ${list.length} 個節點`);
+      } catch (e) {
+        toast.error((e as Error).message);
+      } finally {
+        setLoadingNodes(false);
+      }
+      return;
+    }
     const isWebapp = form.cardType === 'webapp';
     const id = (isWebapp ? form.webappId : form.workflowId)?.trim();
     if (!id) {
@@ -225,10 +290,15 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
       toast.error('webapp 卡片需要 webappId');
       return;
     }
-    if (form.cardType === 'workflow' && !form.workflowId?.trim()) {
+    if (isComfy && !comfyWf && !(isEdit && card?.hasComfyWorkflow)) {
+      toast.error('請上傳 ComfyUI workflow（API 格式 JSON）');
+      return;
+    }
+    if (form.cardType === 'workflow' && !isComfy && !form.workflowId?.trim()) {
       toast.error('workflow 卡片需要 workflowId');
       return;
     }
+    const comfyWorkflow = isComfy && comfyWf && comfyDirty ? comfyWf : undefined;
     setSaving(true);
     try {
       if (isEdit && card) {
@@ -244,6 +314,7 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           promptProfile: form.promptProfile,
           editableFields: form.editableFields || [],
           instanceType: form.cardType === 'workflow' ? form.instanceType : undefined,
+          comfyWorkflow,
           maxDurationSeconds: form.maxDurationSeconds ?? 0,
           hidden: !!form.hidden,
         });
@@ -252,7 +323,8 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
         await api.cards.create({
           cardType: form.cardType,
           webappId: form.cardType === 'webapp' ? form.webappId || '' : '',
-          workflowId: form.cardType === 'workflow' ? form.workflowId || '' : '',
+          workflowId: form.cardType === 'workflow' && !isComfy ? form.workflowId || '' : '',
+          comfyWorkflow,
           title: form.title || '',
           description: form.description || '',
           llmNote: form.llmNote || '',
@@ -420,6 +492,56 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
           ) : (
             <>
               <div className="space-y-2">
+                <Label htmlFor="instanceType">執行位置</Label>
+                <select
+                  id="instanceType"
+                  value={form.instanceType || 'default'}
+                  onChange={(e) => {
+                    set('instanceType', e.target.value as Card['instanceType']);
+                    setNodes([]);
+                  }}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="default">RunningHub 雲端（24G）</option>
+                  <option value="plus">RunningHub 雲端（4090 48G，較快較貴）</option>
+                  <option value="comfyui">本地 ComfyUI（工作站）</option>
+                </select>
+              </div>
+              {isComfy ? (
+                <div className="space-y-2">
+                  <Label>ComfyUI workflow（API 格式）</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" onClick={() => comfyFileRef.current?.click()}>
+                      <Upload className="size-4" /> {comfyWf || card?.hasComfyWorkflow ? '重新上傳' : '上傳'} workflow JSON
+                    </Button>
+                    {isEdit && card?.hasComfyWorkflow && (
+                      <Button type="button" variant="outline" onClick={loadNodes} disabled={loadingNodes}>
+                        {loadingNodes ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        載入節點
+                      </Button>
+                    )}
+                    <input
+                      ref={comfyFileRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) onPickComfyFile(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    {comfyDirty && <span className="text-xs text-primary">有未儲存的 workflow 變更</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    在 ComfyUI 選單用「Export (API)」匯出。勾選的欄位公開給使用者編輯（例：正面提示詞、latent
+                    長寬）；未勾選的欄位只有管理端可在下方改值（例：負面提示詞、步數、採樣器）。未公開的 seed
+                    每次執行自動隨機。
+                  </p>
+                </div>
+              ) : (
+              <>
+              <div className="space-y-2">
                 <Label htmlFor="workflowId">workflowId</Label>
                 <div className="flex gap-2">
                   <Input
@@ -446,23 +568,8 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                 </div>
               </div>
 
-              {/* GPU instance type — workflow only */}
-              <div className="rounded-md border border-border p-3">
-                <label className="flex cursor-pointer items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.instanceType === 'plus'}
-                    onChange={(e) => set('instanceType', e.target.checked ? 'plus' : 'default')}
-                    className="size-4 cursor-pointer"
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">使用 4090 48G（plus）</div>
-                    <div className="text-xs text-muted-foreground">
-                      預設使用 24G 機器；勾選後切換到 48G 機器（速度較快但較貴）
-                    </div>
-                  </div>
-                </label>
-              </div>
+              </>
+              )}
             </>
           )}
 
@@ -523,6 +630,9 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                             </span>
                           )}
                         </div>
+                        {isComfy && comfyWf && !checked && (
+                          <ComfyValueInput node={n} onChange={(v) => setComfyValue(n, v)} />
+                        )}
                         {checked && (
                           <input
                             type="text"
@@ -543,7 +653,9 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
                 <br />
                 {form.cardType === 'webapp'
                   ? '未勾選任何欄位 = 用 RH 預設行為（全部顯示 + RH 推斷類型）；勾選後變白名單。'
-                  : '未勾選的欄位會用 workflow 預設值送出（適合反向提示詞等固定設定）。'}
+                  : isComfy
+                    ? '勾選＝公開給使用者；未勾選＝不公開，用下方管理端設定的值送出（seed 自動隨機）。'
+                    : '未勾選的欄位會用 workflow 預設值送出（適合反向提示詞等固定設定）。'}
               </p>
             </div>
           )}
@@ -738,5 +850,46 @@ export function CardEditModal({ open, card, onClose, onSaved }: Props) {
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface ComfyNode {
+  class_type: string;
+  inputs: Record<string, unknown>;
+  _meta?: { title?: string };
+}
+
+const SEED_FIELDS = new Set(['seed', 'noise_seed']);
+
+/** 不公開欄位的管理端值設定；seed 顯示為自動隨機 */
+function ComfyValueInput({ node, onChange }: { node: NodeInfo; onChange: (v: string) => void }) {
+  const value = node.fieldValue;
+  if (SEED_FIELDS.has(node.fieldName) && typeof value === 'number') {
+    return <p className="mt-1 ml-6 text-xs text-muted-foreground">🎲 每次執行自動隨機</p>;
+  }
+  const cls =
+    'mt-1.5 ml-6 block w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs';
+  if (typeof value === 'boolean') {
+    return (
+      <select className={cls} value={String(value)} onChange={(e) => onChange(e.target.value)}>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+  const text = value == null ? '' : String(value);
+  if (typeof value === 'string' && (text.length > 60 || text.includes('\n'))) {
+    return <textarea rows={3} className={cls} value={text} onChange={(e) => onChange(e.target.value)} />;
+  }
+  return (
+    <input
+      type={typeof value === 'number' ? 'number' : 'text'}
+      step="any"
+      className={cls}
+      defaultValue={text}
+      key={text}
+      onBlur={(e) => e.target.value !== text && onChange(e.target.value)}
+      title="管理端設定值（不公開給使用者）"
+    />
   );
 }

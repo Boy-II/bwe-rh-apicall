@@ -27,6 +27,7 @@ import type {
   UserSummary,
   UserUsage,
   VerifyResponse,
+  InstanceType,
 } from './types';
 import { templateQuery, type TemplateFilters } from './gallery-utils';
 
@@ -124,6 +125,10 @@ export const cards = {
     const res = await request<{ cards: Card[] }>('/api/cards', { user: true, admin: true });
     return res.cards || [];
   },
+  comfyWorkflow: (id: string) =>
+    request<{ workflow: Record<string, unknown> }>(`/api/admin/cards/${encodeURIComponent(id)}/comfy-workflow`, {
+      admin: true,
+    }),
   create: (
     card: Partial<
       Pick<
@@ -144,7 +149,7 @@ export const cards = {
         | 'promptProfile'
       >
     > &
-      Pick<Card, 'title' | 'description' | 'coverUrl'>,
+      Pick<Card, 'title' | 'description' | 'coverUrl'> & { comfyWorkflow?: Record<string, unknown> },
   ) => request<Card>('/api/admin/cards', { method: 'POST', body: json(card), admin: true }),
   update: (
     id: string,
@@ -165,7 +170,7 @@ export const cards = {
           | 'imageMode'
           | 'promptProfile'
         >
-      >,
+      > & { comfyWorkflow?: Record<string, unknown> },
   ) =>
     request<Card>(`/api/admin/cards/${id}`, {
       method: 'PUT',
@@ -500,10 +505,11 @@ export const proxy = {
     });
     return unwrapRh(env);
   },
-  getWorkflowJson: async (workflowId: string): Promise<NodeInfo[]> => {
+  /** cardId：本地 ComfyUI 卡片用卡片內存的 workflow */
+  getWorkflowJson: async (workflowId: string, cardId?: string): Promise<NodeInfo[]> => {
     const env = await request<RhEnvelope<NodeInfo[] | { nodeInfoList?: NodeInfo[] }>>(
       '/api/proxy/getWorkflowJson',
-      { method: 'POST', body: json({ workflowId }), user: true },
+      { method: 'POST', body: json({ workflowId, cardId }), user: true },
     );
     const data = unwrapRh(env);
     if (Array.isArray(data)) return data;
@@ -512,7 +518,7 @@ export const proxy = {
   submitWorkflowTask: async (
     workflowId: string,
     nodeInfoList: NodeInfo[],
-    instanceType: 'default' | 'plus',
+    instanceType: InstanceType,
     cardId?: string,
     cardTitle?: string,
     retainSeconds = 60,
@@ -554,12 +560,14 @@ export const proxy = {
     });
     return unwrapRh(env);
   },
-  uploadFile: async (file: File): Promise<UploadResult> => {
+  /** target='comfyui'：上傳到本地 ComfyUI（否則上傳到 RunningHub） */
+  uploadFile: async (file: File, target?: 'comfyui'): Promise<UploadResult> => {
     const fd = new FormData();
     fd.append('file', file);
     const headers: Record<string, string> = {};
     if (userToken) headers['X-User-Token'] = userToken;
-    const res = await fetch('/api/proxy/uploadFile', { method: 'POST', body: fd, headers });
+    const url = target ? `/api/proxy/uploadFile?target=${target}` : '/api/proxy/uploadFile';
+    const res = await fetch(url, { method: 'POST', body: fd, headers });
     const text = await res.text();
     let data: unknown;
     try {

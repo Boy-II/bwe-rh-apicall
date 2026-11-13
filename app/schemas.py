@@ -44,7 +44,8 @@ class CardCreate(BaseModel):
     coverUrl: str = ""
     tags: list[str] = []
     editableFields: list[EditableField] = []
-    instanceType: str = "default"  # default(24G) / plus(48G 4090)
+    instanceType: str = "default"  # default(24G) / plus(48G 4090) / comfyui(本地工作站)
+    comfyWorkflow: Optional[dict] = None  # instanceType=comfyui 時的 API 格式 workflow
     maxDurationSeconds: int = 0  # 0=用全域預設；>0=本卡片輪詢上限
     enableMaskEditor: bool = False  # 啟用遮罩編輯器（約定：欄位 1=source、欄位 2=mask）
     category: str = "image"
@@ -62,6 +63,7 @@ class CardUpdate(BaseModel):
     tags: Optional[list[str]] = None  # None = 不更動
     editableFields: Optional[list[EditableField]] = None  # None = 不更動
     instanceType: Optional[str] = None  # None = 不更動
+    comfyWorkflow: Optional[dict] = None  # None = 不更動
     maxDurationSeconds: Optional[int] = None  # None = 不更動
     enableMaskEditor: Optional[bool] = None  # None = 不更動
     hidden: Optional[bool] = None  # None = 不更動；True = 對使用者隱藏
@@ -113,11 +115,12 @@ class SubmitTaskRequest(BaseModel):
 
 
 class WorkflowFormatRequest(BaseModel):
-    workflowId: str
+    workflowId: str = ""
+    cardId: Optional[str] = None  # 本地 ComfyUI 卡片用卡片內存的 workflow
 
 
 class SubmitWorkflowRequest(BaseModel):
-    workflowId: str
+    workflowId: str = ""
     nodeInfoList: list
     cardId: Optional[str] = None
     cardTitle: Optional[str] = ""

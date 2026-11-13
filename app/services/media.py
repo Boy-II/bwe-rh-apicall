@@ -14,8 +14,9 @@ from app.core.paths import MEDIA_DIR
 MEDIA_URL_PREFIX = "/covers/media"
 KINDS = ("uploads", "results", "templates")
 MAX_REMOTE_BYTES = 30 * 1024 * 1024
+EXTS = ("png", "jpg", "jpeg", "webp", "gif", "mp4", "webm")
 _URL_RE = re.compile(
-    r"^/covers/media/(uploads|results|templates)/([0-9a-f]{32}\.(?:png|jpg|jpeg|webp))$"
+    r"^/covers/media/(uploads|results|templates)/([0-9a-f]{32}\.(?:png|jpg|jpeg|webp|gif|mp4|webm))$"
 )
 
 Kind = Literal["uploads", "results", "templates"]
@@ -32,7 +33,7 @@ def ensure_dirs() -> None:
 
 def save_bytes(kind: Kind, content: bytes, ext: str) -> str:
     ext = ext.lower().lstrip(".")
-    if kind not in KINDS or ext not in ("png", "jpg", "jpeg", "webp"):
+    if kind not in KINDS or ext not in EXTS:
         raise MediaError("不支援的檔案類型")
     name = f"{secrets.token_hex(16)}.{ext}"
     folder = MEDIA_DIR / kind

@@ -64,7 +64,7 @@ export type PromptProfile =
   | 'seedream'
   | 'krea2'
   | 'moss-image';
-export type InstanceType = 'default' | 'plus'; // default=24G, plus=4090 48G
+export type InstanceType = 'default' | 'plus' | 'comfyui'; // default=RH 24G, plus=RH 48G, comfyui=本地工作站
 
 export interface EditableField {
   nodeId: string;
@@ -93,6 +93,8 @@ export interface Card {
   tags: string[];
   editableFields: EditableField[];
   instanceType: InstanceType;
+  /** instanceType=comfyui 時卡片是否已存 workflow JSON */
+  hasComfyWorkflow?: boolean;
   maxDurationSeconds: number; // 0 = 用全域預設（10 分鐘）
   hidden?: boolean; // 管理員才看得到；true = 對一般使用者隱藏
   enableMaskEditor: boolean; // 啟用後第一個 IMAGE 為來源、第二個為 mask（user 端隱藏 mask 欄位）

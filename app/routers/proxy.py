@@ -17,7 +17,7 @@ from app.schemas import (
     TaskQueryRequest,
     WorkflowFormatRequest,
 )
-from app.services import llm, runninghub, model_api, openai_images
+from app.services import comfyui, llm, runninghub, model_api, openai_images
 from app.services import model_catalog, moss_layout
 from pydantic import BaseModel
 
@@ -139,7 +139,13 @@ async def get_workflow_json(
 
     RH `/api/openapi/getJsonApiFormat` 回 `{code, data: {prompt: "<json string>"}}`
     我們把 prompt JSON 攤平成 nodeInfoList 形式，跟 webapp getNodeInfo 對齊。
+    本地 ComfyUI 卡片（帶 cardId）改用卡片內存的 workflow。
     """
+    card = await _comfy_card(req.cardId)
+    if card:
+        return {"code": 0, "msg": "success", "data": {"nodeInfoList": comfy_node_list(card["comfy_workflow"])}}
+    if not req.workflowId:
+        raise HTTPException(status_code=400, detail="缺少 workflowId")
     resp = await runninghub.post_with_apikey(
         "/api/openapi/getJsonApiFormat",
         {"workflowId": req.workflowId},
@@ -166,7 +172,11 @@ async def submit_workflow_task(
       - default(24G) → POST /proxy/<api_key>
       - plus(48G)    → POST /proxy-plus/<api_key>
     body: {workflowId, nodeInfoList, retainSeconds}
+    本地 ComfyUI 卡片（instance_type=comfyui）改送到工作站的 ComfyUI。
     """
+    card = await _comfy_card(req.cardId)
+    if card:
+        return await _submit_comfy(card, req, user_id)
     body = {
         "workflowId": req.workflowId,
         "nodeInfoList": req.nodeInfoList,
@@ -251,6 +261,14 @@ async def cancel_task(req: TaskQueryRequest, user_id: str = Depends(auth.require
     task = await _owned_task(req.taskId, user_id)
     if task["provider"] == "openai":
         return await openai_images.cancel(task)
+    if task["provider"] == "comfyui":
+        await comfyui.cancel(req.taskId)
+        await db.execute(
+            """UPDATE tasks SET status='CANCELED', error_message='使用者取消', completed_at=NOW()
+            WHERE id=$1 AND completed_at IS NULL""",
+            task["id"],
+        )
+        return {"code": 0, "msg": "success"}
     if task["card_type"] == "model":
         raise HTTPException(
             status_code=400, detail="此標準模型未提供取消 API；停止等待不會取消上游任務"
@@ -284,6 +302,8 @@ async def query_task_outputs(
     task = await _owned_task(req.taskId, user_id)
     if task["provider"] == "openai":
         return await openai_images.query(task)
+    if task["provider"] == "comfyui":
+        return await _query_comfy(task, req.taskId)
     if task["card_type"] == "model":
         data = await model_api.query(req.taskId)
         status = data.get("status") or data.get("taskStatus") or ""
@@ -392,6 +412,77 @@ async def query_task_outputs(
     return resp
 
 
+# ===== 本地 ComfyUI =====
+
+_COMFY_FILE_FIELDS = {("LoadImage", "image"): "IMAGE", ("LoadImageMask", "image"): "IMAGE"}
+
+
+def comfy_node_list(workflow) -> list[dict]:
+    nodes = _parse_workflow_prompt(workflow)
+    for n in nodes:
+        class_type = ((workflow.get(n["nodeId"]) or {}).get("class_type")) or ""
+        n["fieldType"] = _COMFY_FILE_FIELDS.get((class_type, n["fieldName"]), n["fieldType"])
+    return nodes
+
+
+async def _comfy_card(card_id: str | None) -> dict | None:
+    if not card_id:
+        return None
+    card = await db.fetch_one(
+        """SELECT id, title, editable_fields, comfy_workflow FROM cards
+        WHERE id=$1 AND card_type='workflow' AND instance_type='comfyui'""",
+        card_id,
+    )
+    if card and not card["comfy_workflow"]:
+        raise HTTPException(status_code=400, detail="此卡片尚未設定 ComfyUI workflow")
+    return card
+
+
+async def _submit_comfy(card: dict, req: SubmitWorkflowRequest, user_id: str) -> dict:
+    prompt = comfyui.build_prompt(card["comfy_workflow"], card["editable_fields"], req.nodeInfoList)
+    prompt_id = await comfyui.submit(prompt)
+    await db.execute(
+        """INSERT INTO tasks (id, user_id, card_id, card_title, card_type, webapp_id, workflow_id,
+        rh_task_id, status, node_input, provider, created_at)
+        VALUES ($1, $2, $3, $4, 'workflow', '', '', $5, 'QUEUED', $6, 'comfyui', NOW())""",
+        secrets.token_hex(8), user_id, card["id"], (req.cardTitle or card["title"] or "").strip(),
+        prompt_id, req.nodeInfoList,
+    )
+    return {"code": 0, "msg": "success", "data": {"taskId": prompt_id}}
+
+
+def _comfy_response(status: str, results: list, error: str | None) -> dict:
+    return {
+        "status": status,
+        "results": [{"url": r["url"], "outputType": r.get("fileType", "")} for r in results or []],
+        "errorMessage": error or "",
+    }
+
+
+async def _query_comfy(task: dict, prompt_id: str) -> dict:
+    # 已結束就回傳 DB 結果（TIMEOUT 是前端輪詢逾時標記，任務可能仍在跑，要再查）
+    if task["status"] in ("SUCCESS", "FAILED", "CANCELED"):
+        return _comfy_response(task["status"], task["results"], task["error_message"])
+    r = await comfyui.query(prompt_id)
+    if r["status"] == "SUCCESS":
+        results = [await comfyui.save_output(f) for f in r["outputs"]]
+        await db.execute(
+            """UPDATE tasks SET status='SUCCESS', results=$2, error_message=NULL, completed_at=NOW(),
+            cost_time=EXTRACT(EPOCH FROM NOW() - created_at) WHERE id=$1""",
+            task["id"], results,
+        )
+        return _comfy_response("SUCCESS", results, None)
+    if r["status"] == "FAILED":
+        await db.execute(
+            """UPDATE tasks SET status='FAILED', error_message=$2, completed_at=NOW(),
+            cost_time=EXTRACT(EPOCH FROM NOW() - created_at) WHERE id=$1""",
+            task["id"], r["error"],
+        )
+        return _comfy_response("FAILED", [], r["error"])
+    await db.execute("UPDATE tasks SET status=$2 WHERE id=$1 AND completed_at IS NULL", task["id"], r["status"])
+    return _comfy_response(r["status"], [], None)
+
+
 async def _owned_task(task_id: str, user_id: str) -> dict:
     if not task_id:
         raise HTTPException(status_code=400, detail="缺少 taskId")
@@ -411,9 +502,15 @@ async def _owned_task(task_id: str, user_id: str) -> dict:
 )
 async def upload_file(
     file: UploadFile = File(...),
+    target: str = "",
     _user: str = Depends(auth.require_user),
 ):
     content = await file.read()
+    if target == "comfyui":
+        if len(content) > 30 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="檔案超過 30 MB")
+        name = await comfyui.upload_image(file.filename or "upload.png", content, file.content_type or "")
+        return {"code": 0, "msg": "success", "data": {"fileName": name, "fileType": "image"}}
     return await runninghub.upload_binary(
         file.filename or "upload.bin",
         content,

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from app.core import auth, db
 from app.schemas import CardCreate, CardReorderRequest, CardUpdate
+from app.services import comfyui
 from app.services.model_catalog import PROFILES
 from app.core.paths import COVERS_DIR
 
@@ -51,6 +52,7 @@ def _row_to_dict(row: dict) -> dict:
         "tags": row.get("tags") or [],
         "editableFields": row.get("editable_fields") or [],
         "instanceType": row.get("instance_type") or "default",
+        "hasComfyWorkflow": bool(row.get("has_comfy_workflow")),
         "maxDurationSeconds": row.get("max_duration_seconds") or 0,
         "enableMaskEditor": bool(row.get("enable_mask_editor")),
         "hidden": bool(row.get("hidden")),
@@ -62,8 +64,11 @@ def _row_to_dict(row: dict) -> dict:
 _CARD_COLUMNS = (
     "id, card_type, webapp_id, workflow_id, title, description, llm_note, icon, color, "
     "cover_url, tags, editable_fields, instance_type, max_duration_seconds, "
-    "enable_mask_editor, sort_order, created_at, category, image_mode, model_key, prompt_profile, hidden"
+    "enable_mask_editor, sort_order, created_at, category, image_mode, model_key, prompt_profile, hidden, "
+    "comfy_workflow <> '{}'::jsonb AS has_comfy_workflow"
 )
+
+INSTANCE_TYPES = {"default", "plus", "comfyui"}
 
 
 def _normalize_tags(tags: list[str]) -> list[str]:
@@ -105,7 +110,10 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         )
     if req.cardType == "webapp" and not req.webappId.strip():
         raise HTTPException(status_code=400, detail="webapp 卡片需要 webappId")
-    if req.cardType == "workflow" and not req.workflowId.strip():
+    is_comfy = req.cardType == "workflow" and req.instanceType == "comfyui"
+    if is_comfy:
+        comfyui.validate_workflow(req.comfyWorkflow)
+    elif req.cardType == "workflow" and not req.workflowId.strip():
         raise HTTPException(status_code=400, detail="workflow 卡片需要 workflowId")
 
     _validate_metadata(req.category, req.imageMode, req.promptProfile)
@@ -125,9 +133,7 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         for e in (req.editableFields or [])
     ]
 
-    instance = (
-        req.instanceType if req.instanceType in {"default", "plus"} else "default"
-    )
+    instance = req.instanceType if req.instanceType in INSTANCE_TYPES else "default"
     max_dur = max(0, int(req.maxDurationSeconds or 0))
     tags = _normalize_tags(req.tags or [])
 
@@ -136,9 +142,10 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         INSERT INTO cards (
             id, card_type, webapp_id, workflow_id, title, description, llm_note, icon,
             color, cover_url, tags, editable_fields, instance_type, max_duration_seconds,
-            enable_mask_editor, sort_order, created_at, updated_at, category, image_mode, prompt_profile
+            enable_mask_editor, sort_order, created_at, updated_at, category, image_mode, prompt_profile,
+            comfy_workflow
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17, $18, $19, $20, $21)
         RETURNING {_CARD_COLUMNS}
         """,
         card_id,
@@ -161,6 +168,7 @@ async def admin_add_card(req: CardCreate, _: str = Depends(auth.require_admin)):
         req.category,
         req.imageMode,
         req.promptProfile,
+        req.comfyWorkflow if is_comfy else {},
     )
     return _row_to_dict(row)
 
@@ -215,11 +223,13 @@ async def admin_update_card(
         args.append(editable)
         next_idx += 1
     if req.instanceType is not None:
-        instance = (
-            req.instanceType if req.instanceType in {"default", "plus"} else "default"
-        )
+        instance = req.instanceType if req.instanceType in INSTANCE_TYPES else "default"
         sets.append(f"instance_type = ${next_idx}")
         args.append(instance)
+        next_idx += 1
+    if req.comfyWorkflow is not None:
+        sets.append(f"comfy_workflow = ${next_idx}")
+        args.append(comfyui.validate_workflow(req.comfyWorkflow))
         next_idx += 1
     if req.maxDurationSeconds is not None:
         sets.append(f"max_duration_seconds = ${next_idx}")
@@ -261,6 +271,15 @@ async def admin_update_card(
     if not row:
         raise HTTPException(status_code=404, detail="卡片不存在")
     return _row_to_dict(row)
+
+
+@router.get("/api/admin/cards/{card_id}/comfy-workflow")
+async def admin_get_comfy_workflow(card_id: str, _: str = Depends(auth.require_admin)):
+    """管理端編輯本地 ComfyUI 卡片時取回已存的 workflow（含不公開欄位的設定值）。"""
+    row = await db.fetch_one("SELECT comfy_workflow FROM cards WHERE id=$1", card_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    return {"workflow": row["comfy_workflow"] or {}}
 
 
 @router.delete("/api/admin/cards/{card_id}")

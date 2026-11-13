@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { UploadTargetContext } from '@/lib/comfy-utils';
 import { Upload, Loader2, CheckCircle2, AlertCircle, Brush, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function NodeRenderer({ nodes, drafts, onChange }: Props) {
+  const uploadTarget = useContext(UploadTargetContext);
   // 自動偵測 mask editor：admin 把某欄位類型設為 MASK 即觸發
   // 該欄位 = mask（user 端隱藏，由編輯器自動填）、第一個 IMAGE 欄位 = source
   const { sourceIdx, maskIdx } = useMemo(() => {
@@ -59,7 +61,7 @@ export function NodeRenderer({ nodes, drafts, onChange }: Props) {
     if (maskIdx < 0) return;
     try {
       const file = new File([blob], 'mask.png', { type: 'image/png' });
-      const res = await api.proxy.uploadFile(file);
+      const res = await api.proxy.uploadFile(file, uploadTarget);
       setField(maskIdx, {
         uploadedFileName: res.fileName,
         fieldValue: res.fileName,
@@ -301,6 +303,7 @@ function FileField({
   /** 圖片預覽被雙擊時觸發（mask editor 入口之一）*/
   onPreviewDoubleClick?: () => void;
 }) {
+  const uploadTarget = useContext(UploadTargetContext);
   const [status, setStatus] = useState<UploadStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
@@ -324,7 +327,7 @@ function FileField({
       setStatus('uploading');
       setErrorMsg('');
       try {
-        const res = await api.proxy.uploadFile(file);
+        const res = await api.proxy.uploadFile(file, uploadTarget);
         const patch: Partial<DraftNode> = {
           uploadedFileName: res.fileName,
           fieldValue: res.fileName,

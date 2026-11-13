@@ -16,6 +16,7 @@ import {
   type NormalizedOutput,
 } from '@/lib/task-utils';
 import { markCardUsed } from '@/lib/card-utils';
+import { UploadTargetContext } from '@/lib/comfy-utils';
 import { ensurePermission as ensureNotifyPermission, notify } from '@/lib/notify';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 import type { RerunPrefill } from '@/App';
@@ -49,6 +50,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
   const abortRef = useRef<AbortController | null>(null);
 
   const isWorkflow = card.cardType === 'workflow';
+  const isComfy = isWorkflow && card.instanceType === 'comfyui';
 
   // workflow 模式下只顯示白名單裡的節點
   const visibleNodes = useMemo(() => {
@@ -81,16 +83,18 @@ export function TaskView({ card, onBack, prefill }: Props) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const list = isWorkflow
-        ? await api.proxy.getWorkflowJson(card.workflowId)
-        : await api.proxy.getNodeInfo(card.webappId);
+      const list = isComfy
+        ? await api.proxy.getWorkflowJson('', card.id)
+        : isWorkflow
+          ? await api.proxy.getWorkflowJson(card.workflowId)
+          : await api.proxy.getNodeInfo(card.webappId);
       setAllNodes(list);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [isWorkflow, card.webappId, card.workflowId]);
+  }, [isWorkflow, isComfy, card.id, card.webappId, card.workflowId]);
 
   useEffect(() => {
     reload();
@@ -211,6 +215,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
   const noEditable = isWorkflow && visibleNodes.length === 0 && !loading;
 
   return (
+    <UploadTargetContext.Provider value={isComfy ? 'comfyui' : undefined}>
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
@@ -224,6 +229,11 @@ export function TaskView({ card, onBack, prefill }: Props) {
                 <p className="text-xs text-muted-foreground">{card.description}</p>
               )}
             </div>
+            {isComfy && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                <Cpu className="size-3" /> 本地 ComfyUI
+              </span>
+            )}
             {isWorkflow && card.instanceType === 'plus' && (
               <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
                 <Cpu className="size-3" /> 4090 48G
@@ -300,6 +310,7 @@ export function TaskView({ card, onBack, prefill }: Props) {
         }}
       />
     </div>
+    </UploadTargetContext.Provider>
   );
 }
 
