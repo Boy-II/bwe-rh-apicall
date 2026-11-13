@@ -19,6 +19,7 @@ WORKFLOW = {
     "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "a cat", "clip": ["4", 1]}, "_meta": {"title": "Prompt"}},
     "10": {"class_type": "LoadImage", "inputs": {"image": "example.png"}},
     "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "out", "images": ["8", 0]}},
+    "20": {"class_type": "Lora Stacker", "inputs": {"loras": {"__value__": []}, "Update inputs": None}},
 }
 EDITABLE = [{"nodeId": "6", "fieldName": "text"}, {"nodeId": "3", "fieldName": "seed"},
             {"nodeId": "10", "fieldName": "image", "fieldType": "IMAGE"}]
@@ -157,6 +158,7 @@ class ComfyRouteTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         image = next(n for n in nodes if n["nodeId"] == "10")
         self.assertEqual(image["fieldType"], "IMAGE")
         self.assertFalse(any(n["fieldName"] == "model" for n in nodes))  # 連線不暴露
+        self.assertFalse(any(n["nodeId"] == "20" for n in nodes))  # 物件型設定不暴露
 
         up = await self.client.post("/api/proxy/uploadFile?target=comfyui", files={"file": ("a.png", png(), "image/png")})
         self.assertEqual(up.json()["data"]["fileName"], "up.png")
@@ -175,6 +177,7 @@ class ComfyRouteTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         q = (await self.client.post("/api/proxy/queryTaskOutputs", json={"taskId": "pid-1"})).json()
         self.assertEqual(q["status"], "QUEUED")
 
+        self.comfy.queue = {"queue_running": [], "queue_pending": []}
         self.comfy.history = {"pid-1": {"status": {"status_str": "success", "completed": True}, "outputs": {
             "9": {"images": [{"filename": "out_0001.png", "subfolder": "", "type": "output"},
                              {"filename": "preview.png", "subfolder": "", "type": "temp"}]}}}}
@@ -194,6 +197,7 @@ class ComfyRouteTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
     async def test_execution_error_marks_failed(self):
         card_id = await self._card()
         await self.client.post("/api/proxy/submitWorkflowTask", json={"cardId": card_id, "nodeInfoList": []})
+        self.comfy.queue = {"queue_running": [], "queue_pending": []}
         self.comfy.history = {"pid-1": {"status": {"status_str": "error", "completed": False, "messages": [
             ["execution_error", {"node_type": "KSampler", "exception_message": "CUDA out of memory"}]]}, "outputs": {}}}
         q = (await self.client.post("/api/proxy/queryTaskOutputs", json={"taskId": "pid-1"})).json()
@@ -218,3 +222,30 @@ class ComfyRouteTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.comfy.status_override = 302
         res = await self.client.post("/api/proxy/submitWorkflowTask", json={"cardId": card_id, "nodeInfoList": []})
         self.assertIn("Service Token", res.json()["detail"])
+
+
+class ComfyQueryRaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_finished_between_requests_is_success_not_missing(self):
+        """任務在查佇列後才完成：歷史已寫入，不可誤判找不到。"""
+        calls = []
+
+        async def fake_request(method, path, **kw):
+            calls.append(path)
+            if path == "/queue":
+                return httpx.Response(200, json={"queue_running": [], "queue_pending": []})
+            return httpx.Response(200, json={"p": {"status": {"status_str": "success", "completed": True},
+                                                   "outputs": {"9": {"images": [{"filename": "a.png", "type": "output"}]}}}})
+
+        with patch.object(comfyui, "_request", fake_request):
+            r = await comfyui.query("p")
+        self.assertEqual(r["status"], "SUCCESS")
+        self.assertEqual(calls[0], "/queue")
+
+    async def test_missing_everywhere_rechecks_then_fails(self):
+        async def fake_request(method, path, **kw):
+            return httpx.Response(200, json={"queue_running": [], "queue_pending": []} if path == "/queue" else {})
+
+        with patch.object(comfyui, "_request", fake_request), patch.object(comfyui.asyncio, "sleep", AsyncMock()) as sl:
+            r = await comfyui.query("p")
+        self.assertEqual(r["status"], "FAILED")
+        sl.assert_awaited_once()

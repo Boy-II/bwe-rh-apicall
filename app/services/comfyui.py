@@ -3,6 +3,7 @@
 流程：上傳圖片 /upload/image → 送出 /prompt → 查 /history、/queue → 下載 /view 存到自有媒體。
 """
 
+import asyncio
 import copy
 import logging
 import secrets
@@ -157,27 +158,40 @@ def _error_text(status: dict) -> str:
     return "ComfyUI 執行失敗"
 
 
-async def query(prompt_id: str) -> dict:
-    """回傳 {status, outputs, error}；status ∈ QUEUED/RUNNING/SUCCESS/FAILED。"""
+async def _history(prompt_id: str) -> dict | None:
     resp = await _request("GET", f"/history/{prompt_id}")
     hist = (resp.json() or {}).get(prompt_id) if resp.status_code == 200 else None
-    if hist:
-        st = hist.get("status") or {}
-        if st.get("status_str") == "error":
-            return {"status": "FAILED", "outputs": [], "error": _error_text(st)}
-        if st.get("completed", True):
-            outputs = []
-            for node_out in (hist.get("outputs") or {}).values():
-                for key in _OUTPUT_KEYS:
-                    for f in node_out.get(key) or []:
-                        if isinstance(f, dict) and f.get("filename") and f.get("type", "output") == "output":
-                            outputs.append(f)
-            return {"status": "SUCCESS", "outputs": outputs, "error": None}
+    if not hist:
+        return None
+    st = hist.get("status") or {}
+    if st.get("status_str") == "error":
+        return {"status": "FAILED", "outputs": [], "error": _error_text(st)}
+    outputs = []
+    for node_out in (hist.get("outputs") or {}).values():
+        for key in _OUTPUT_KEYS:
+            for f in node_out.get(key) or []:
+                if isinstance(f, dict) and f.get("filename") and f.get("type", "output") == "output":
+                    outputs.append(f)
+    return {"status": "SUCCESS", "outputs": outputs, "error": None}
+
+
+async def query(prompt_id: str) -> dict:
+    """回傳 {status, outputs, error}；status ∈ QUEUED/RUNNING/SUCCESS/FAILED。
+
+    先查佇列再查歷史：任務在兩次請求之間完成時，歷史一定已寫入；
+    反過來的順序會在完成瞬間兩邊都查不到而誤判失敗。
+    """
     q = (await _request("GET", "/queue")).json()
     if any(len(x) > 1 and x[1] == prompt_id for x in q.get("queue_running") or []):
         return {"status": "RUNNING", "outputs": [], "error": None}
     if any(len(x) > 1 and x[1] == prompt_id for x in q.get("queue_pending") or []):
         return {"status": "QUEUED", "outputs": [], "error": None}
+    for attempt in range(2):
+        hist = await _history(prompt_id)
+        if hist:
+            return hist
+        if attempt == 0:
+            await asyncio.sleep(1)
     return {"status": "FAILED", "outputs": [], "error": "ComfyUI 找不到此任務（工作站可能已重啟）"}
 
 

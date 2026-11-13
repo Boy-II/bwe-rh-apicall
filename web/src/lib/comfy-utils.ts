@@ -27,7 +27,7 @@ export function parseComfyWorkflow(text: string): { workflow: Record<string, unk
     }
     const title = node._meta?.title || '';
     for (const [fieldName, value] of Object.entries(node.inputs || {})) {
-      if (Array.isArray(value)) continue; // 連線
+      if (Array.isArray(value) || value === null || typeof value === 'object') continue; // 連線、物件型設定
       const fieldType =
         FILE_FIELDS[`${node.class_type}::${fieldName}`] ||
         (typeof value === 'number' && Number.isInteger(value) ? 'INT' : 'STRING');

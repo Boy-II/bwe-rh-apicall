@@ -103,8 +103,8 @@ def _parse_workflow_prompt(prompt_str: str) -> list[dict]:
         class_type = node_def.get("class_type") or ""
 
         for field_name, field_value in inputs.items():
-            # 跳過 wire 連線（array reference 如 ["11", 0]）
-            if isinstance(field_value, list):
+            # 跳過 wire 連線（array reference 如 ["11", 0]）與外掛節點的物件型設定
+            if isinstance(field_value, (list, dict)) or field_value is None:
                 continue
 
             # FLOAT 與 BOOLEAN 都歸成 STRING（user 端不需要這兩類；admin 可在前端手動改類型）
