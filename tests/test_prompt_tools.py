@@ -37,6 +37,43 @@ class PromptToolUnitTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value="```json\n{}\n```\n```prompt\nNEW\n```")):
             self.assertEqual(await prompt_tools.optimize("old", "r", "generic"), "NEW")
 
+    async def test_prompt_block_keeps_inner_code_blocks(self):
+        inner = '## 提示詞\n```json\n{"a": 1}\n```\n\n## Notes\n結尾'
+        self.assertEqual(prompt_tools.prompt_block(f"````prompt\n{inner}\n````\n說明"), inner)
+        self.assertEqual(prompt_tools.prompt_block(f"```prompt\n{inner}\n```"), inner)
+        bare = "前文\n```\n{}\n```\n後文"
+        self.assertEqual(prompt_tools.prompt_block(f"```prompt\n{bare}\n```"), bare)
+
+    async def test_optimize_asks_to_keep_full_text_and_sections(self):
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value="````prompt\n# A\n## Notes\n````")) as c:
+            await prompt_tools.optimize("# A\n## Notes", "r", "generic")
+        system = c.call_args.args[0]
+        self.assertIn("完整全文", system)
+        self.assertIn("## Reference Image", system)
+        self.assertIn("合法 JSON", system)
+
+    async def test_optimize_retries_when_sections_dropped(self):
+        original = "Sit on an Instagram frame.\n\n## Notes\nReplaceable.\n\n## Reference Image\nYes, needs an image."
+        fixed = original.replace("Instagram", "Facebook")
+        replies = ["```prompt\nSit on a Facebook frame.\n```", f"````prompt\n{fixed}\n````"]
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(side_effect=replies)) as c:
+            out = await prompt_tools.optimize(original, "改成 Facebook 相框", "generic")
+        self.assertEqual(out, fixed)
+        self.assertEqual(c.await_count, 2)
+        self.assertIn("段落標題", c.call_args.args[1])
+
+    async def test_optimize_retries_when_json_broken(self):
+        original = '{"scene": "Instagram frame", "pose": "finger heart"}'
+        good = '{"scene": "Facebook frame", "pose": "finger heart"}'
+        replies = ["```prompt\nscene: Facebook frame\n```", f"````prompt\n{good}\n````"]
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(side_effect=replies)):
+            self.assertEqual(await prompt_tools.optimize(original, "改成 Facebook", "generic"), good)
+
+    async def test_optimize_no_retry_when_structure_kept(self):
+        with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value='```prompt\n{"a": 2}\n```')) as c:
+            self.assertEqual(await prompt_tools.optimize('{"a": 1}', "改成 2", "generic"), '{"a": 2}')
+        self.assertEqual(c.await_count, 1)
+
     async def test_translate_zh_asks_for_traditional(self):
         with patch.object(prompt_tools.llm, "complete", AsyncMock(return_value="一隻狐狸")) as c:
             self.assertEqual(await prompt_tools.translate("a fox", "zh"), "一隻狐狸")
