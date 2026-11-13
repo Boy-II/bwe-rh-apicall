@@ -80,3 +80,20 @@ class MediaRetentionTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(p_keep.exists())
         results = await db.fetch_val("SELECT results FROM tasks WHERE id='t1'")
         self.assertEqual([r["url"] for r in results], [keep])
+
+
+    async def test_stale_uploads_swept_after_ttl(self):
+        old = media.local_path(media.save_bytes("uploads", b"x", "png"))
+        fresh = media.local_path(media.save_bytes("uploads", b"x", "png"))
+        t = time.time() - media_retention.UPLOAD_TTL_SECONDS - 60
+        os.utime(old, (t, t))
+        self.assertEqual(media_retention.cleanup_uploads(), 1)
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+
+    def test_delete_uploads_never_touches_results_or_templates(self):
+        up = media.save_bytes("uploads", b"x", "png")
+        res = media.save_bytes("results", b"x", "png")
+        tpl = media.save_bytes("templates", b"x", "png")
+        self.assertEqual(media.delete_uploads([[up, res], tpl, "prompt text", 3]), 1)
+        self.assertTrue(media.local_path(res).exists() and media.local_path(tpl).exists())

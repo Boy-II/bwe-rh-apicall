@@ -78,7 +78,10 @@ async def run(task_id: str, model: dict, payload: dict) -> None:
         async with httpx.AsyncClient(
             timeout=TIMEOUT_SECONDS, transport=_transport, follow_redirects=True
         ) as client:
-            content = await _call(client, model, payload)
+            try:
+                content = await _call(client, model, payload)
+            finally:
+                media.delete_uploads(list(payload.values()))  # 參考圖用完即刪
         url = media.save_bytes("results", content, media.image_ext(content))
         await db.execute(
             """UPDATE tasks SET status='SUCCESS', results=$2, completed_at=NOW()

@@ -63,6 +63,17 @@ def delete_local(url: str) -> bool:
         return False
 
 
+def delete_uploads(values) -> int:
+    """刪除使用者上傳的參考圖（只限 uploads；用完即刪，不在伺服器保留）。"""
+    urls = []
+    for v in values if isinstance(values, (list, tuple)) else [values]:
+        if isinstance(v, (list, tuple)):
+            urls.extend(v)
+        elif isinstance(v, str):
+            urls.append(v)
+    return sum(1 for u in urls if isinstance(u, str) and u.startswith(f"{MEDIA_URL_PREFIX}/uploads/") and delete_local(u))
+
+
 def read_sync_local(url: str) -> bytes:
     path = local_path(url)
     if path is None or not path.is_file():

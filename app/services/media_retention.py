@@ -12,7 +12,9 @@ from app.services import media
 logger = logging.getLogger(__name__)
 
 RETENTION_DAYS = int(os.environ.get("MEDIA_RESULTS_RETENTION_DAYS", "45"))
-CLEANUP_INTERVAL_SECONDS = 6 * 3600
+# 使用者上傳的參考圖用完即刪；未送出就離開的，最多保留這麼久
+UPLOAD_TTL_SECONDS = 2 * 3600
+CLEANUP_INTERVAL_SECONDS = 30 * 60
 _PREFIX = f"{media.MEDIA_URL_PREFIX}/results/"
 
 
@@ -82,9 +84,25 @@ async def cleanup_expired(now: float | None = None) -> int:
     return n
 
 
+def cleanup_uploads(now: float | None = None) -> int:
+    folder = media.MEDIA_DIR / "uploads"
+    if not folder.is_dir():
+        return 0
+    cutoff = (now or time.time()) - UPLOAD_TTL_SECONDS
+    n = 0
+    for p in folder.iterdir():
+        if p.is_file() and p.stat().st_mtime < cutoff:
+            p.unlink(missing_ok=True)
+            n += 1
+    if n:
+        logger.info("清理未使用的上傳參考圖：%d 個", n)
+    return n
+
+
 async def run_forever() -> None:
     while True:
         try:
+            cleanup_uploads()
             await cleanup_expired()
         except Exception:
             logger.exception("生成圖片清理失敗")

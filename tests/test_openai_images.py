@@ -109,6 +109,8 @@ class OpenAIImagesTests(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body.count(b'name="image[]"'), 2)
         self.assertIn(b'name="model"', body)
         self.assertIn(b'name="n"', body)
+        # 參考圖用完即刪
+        self.assertFalse(media.local_path(a).exists() or media.local_path(b).exists())
 
     async def test_b64_result_saved_and_task_success(self):
         model = await image_registry.get("omni-gpt-text")

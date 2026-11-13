@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
+import { keepAvailable, prepareUploadsForSubmit } from '@/lib/upload-session';
 import { cleanModelPayload } from '@/lib/model-utils';
 import { imageField, modelOptions, pickModelKey, requiresReference } from '@/lib/gallery-utils';
 import { normalizeOutputs, pollTask, type NormalizedOutput } from '@/lib/task-utils';
@@ -73,7 +74,9 @@ export function GeneratePage({ templateId, prefill, onBack }: Props) {
             if (n.fieldName === 'prompt') setPrompt(String(n.fieldValue ?? ''));
             else if (p?.type === 'IMAGE') {
               const urls = Array.isArray(n.fieldValue) ? n.fieldValue.map(String) : n.fieldValue ? [String(n.fieldValue)] : [];
-              setImages(urls);
+              const { kept, dropped } = keepAvailable(urls);
+              if (dropped) toast.info('參考圖不會保留在伺服器，請重新上傳');
+              setImages(kept);
               setImagesKey('prefill');
             } else if (n.fieldValue !== null && n.fieldValue !== undefined) v[n.fieldName] = n.fieldValue as ModelValue;
           }
@@ -125,7 +128,6 @@ export function GeneratePage({ templateId, prefill, onBack }: Props) {
     );
     payload.prompt = prompt;
     const img = imageField(model.params);
-    if (img && hasImages) payload[img.fieldKey] = img.multipleInputs === false ? images[0] : images;
     setBusy(true);
     setError('');
     setOutputs([]);
@@ -133,6 +135,10 @@ export function GeneratePage({ templateId, prefill, onBack }: Props) {
     setStatus('正在提交…');
     abort.current = new AbortController();
     try {
+      if (img && hasImages) {
+        const refs = await prepareUploadsForSubmit(images);
+        payload[img.fieldKey] = img.multipleInputs === false ? refs[0] : refs;
+      }
       const task = await api.models.submit(model.key, payload, template?.id);
       setTaskId(task.taskId);
       setLastRun({ prompt, modelKey: model.key, hadImages: hasImages });

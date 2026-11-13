@@ -146,9 +146,10 @@ class RoutesIntegration(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row["card_id"])
         self.assertEqual(row["card_title"], "GPT Image 2")
         self.assertEqual(row["raw_response"]["templateId"], "tpl1")
-        # node_input 保存本地 URL，重跑時可再用
         img = [n for n in row["node_input"] if n["fieldName"] == "imageUrls"][0]
         self.assertEqual(img["fieldValue"][0], local)
+        # 使用者上傳的參考圖轉存到上游後即刪除，伺服器不保留
+        self.assertFalse(media.local_path(local).exists())
 
     async def test_submit_unknown_or_disabled_model_404(self):
         res = await self.client.post(

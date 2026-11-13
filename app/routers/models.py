@@ -145,7 +145,11 @@ async def submit_model(req: ModelSubmit, user_id: str = Depends(auth.require_use
         raw,
     )
     try:
-        rh_payload = await resolve_rh_images(payload, model)
+        try:
+            rh_payload = await resolve_rh_images(payload, model)
+        finally:
+            # 參考圖已轉存到 RunningHub（或提交失敗），伺服器不保留使用者上傳
+            media.delete_uploads(list(payload.values()))
         data = await model_api.submit(model["upstream"], rh_payload)
     except HTTPException as e:
         await db.execute(

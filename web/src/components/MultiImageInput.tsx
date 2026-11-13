@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { prepareModelImage } from '@/lib/image-compress';
 import api from '@/lib/api';
+import { rememberUpload } from '@/lib/upload-session';
 import type { ModelParam } from '@/lib/types';
 
 interface Item {
@@ -65,6 +66,7 @@ export function MultiImageInput({ modelKey, param, initial, disabled, onChange, 
         size: `${prepared.width} × ${prepared.height} · ${(prepared.file.size / 1024).toFixed(0)} KB`,
       });
       const result = await api.models.upload(modelKey, param.fieldKey, prepared.file);
+      rememberUpload(result.url, prepared.file, modelKey, param.fieldKey);
       // Removed rows stay removed even if their network response arrives later.
       update(item.id, { url: result.url });
     } catch (e) {
