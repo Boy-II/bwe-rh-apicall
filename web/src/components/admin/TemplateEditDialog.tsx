@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import api from '@/lib/api';
-import { useAuth, isAdmin } from '@/lib/auth-store';
+import { useAuth, canEditTemplates } from '@/lib/auth-store';
 import { MODEL_LABELS, type ModelLabel, type TemplateCategory, type TemplateDetail, type TemplateMode } from '@/lib/types';
 
 interface Props {
@@ -15,7 +15,7 @@ interface Props {
 }
 
 export function TemplateEditDialog({ templateId, onClose, onSaved }: Props) {
-  const admin = isAdmin(useAuth((s) => s.user));
+  const admin = canEditTemplates(useAuth((s) => s.user));
   const [t, setT] = useState<TemplateDetail | null>(null);
   const [cats, setCats] = useState<TemplateCategory[]>([]);
   const [tags, setTags] = useState('');

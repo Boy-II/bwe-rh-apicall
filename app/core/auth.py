@@ -122,6 +122,7 @@ async def authenticated_user(request: Request) -> dict:
             "name": "管理員",
             "email": "",
             "division": "",
+            "role": "admin",
         }
     user = await db.fetch_one("SELECT * FROM users WHERE id=$1", user_id)
     payload = jwt.decode(token, config.get_jwt_secret(), algorithms=[_JWT_ALGORITHM])
@@ -137,6 +138,26 @@ async def authenticated_user(request: Request) -> dict:
 
 async def require_user(request: Request) -> str:
     return (await authenticated_user(request))["id"]
+
+
+TEMPLATE_EDITOR_ROLES = ("editor", "admin")
+
+
+async def is_template_editor(request: Request) -> bool:
+    """管理員 token，或使用者角色為 editor/admin，可管理範本分類與編輯範本。"""
+    if await is_admin_token_valid(request.headers.get("X-Admin-Token", "")):
+        return True
+    try:
+        user = await authenticated_user(request)
+    except HTTPException:
+        return False
+    return user.get("role") in TEMPLATE_EDITOR_ROLES
+
+
+async def require_template_editor(request: Request) -> str:
+    if not await is_template_editor(request):
+        raise HTTPException(status_code=403, detail="需要範本編輯權限")
+    return "editor"
 
 
 async def optional_user(request: Request) -> Optional[str]:

@@ -2,7 +2,7 @@
 
 import re
 import secrets
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -17,15 +17,33 @@ _SUMMARY_COLS = "t.id, t.title, t.category_id, t.tags, t.mode, t.thumb_url, t.im
 _DETAIL_COLS = _SUMMARY_COLS + ", t.prompt_en, t.prompt_zh, t.suggested_model"
 
 
+class Perms(NamedTuple):
+    editor: bool  # 範本編輯者（含管理員）：可編輯任何範本
+    admin: bool  # 管理員：可刪除任何範本
+
+
 async def is_admin(request: Request) -> bool:
     return await auth.is_admin_token_valid(request.headers.get("X-Admin-Token", ""))
 
 
-def can_edit(row: dict, user_id: str, admin: bool) -> bool:
-    return admin or (row.get("created_by") is not None and row["created_by"] == user_id)
+async def perms(request: Request) -> Perms:
+    admin = await is_admin(request)
+    return Perms(editor=admin or await auth.is_template_editor(request), admin=admin)
 
 
-def summary(row: dict, user_id: str, admin: bool) -> dict:
+def _is_owner(row: dict, user_id: str) -> bool:
+    return row.get("created_by") is not None and row["created_by"] == user_id
+
+
+def can_edit(row: dict, user_id: str, p: Perms) -> bool:
+    return p.editor or _is_owner(row, user_id)
+
+
+def can_delete(row: dict, user_id: str, p: Perms) -> bool:
+    return p.admin or _is_owner(row, user_id)
+
+
+def summary(row: dict, user_id: str, admin: Perms) -> dict:
     return {
         "id": row["id"],
         "title": row["title"],
@@ -37,10 +55,11 @@ def summary(row: dict, user_id: str, admin: bool) -> dict:
         "favorited": bool(row.get("favorited")),
         "modelLabel": row.get("model_label") or "",
         "canEdit": can_edit(row, user_id, admin),
+        "canDelete": can_delete(row, user_id, admin),
     }
 
 
-def detail(row: dict, user_id: str, admin: bool) -> dict:
+def detail(row: dict, user_id: str, admin: Perms) -> dict:
     return {
         **summary(row, user_id, admin),
         "promptEn": row["prompt_en"],
@@ -130,7 +149,7 @@ async def list_templates(
         ORDER BY t.created_at DESC, t.id LIMIT {arg(limit)} OFFSET {arg(offset)}""",
         *args,
     )
-    admin = await is_admin(request)
+    admin = await perms(request)
     next_offset = offset + len(rows)
     return {
         "items": [summary(r, user_id, admin) for r in rows],
@@ -144,7 +163,7 @@ async def get_template(template_id: str, request: Request, user_id: str = Depend
     row = await fetch_detail(template_id, user_id)
     if not row:
         raise HTTPException(status_code=404, detail="範本不存在")
-    return detail(row, user_id, await is_admin(request))
+    return detail(row, user_id, await perms(request))
 
 
 async def _sync_favorite_count(template_id: str) -> None:
@@ -306,17 +325,19 @@ async def save_template(body: SaveBody, request: Request, user_id: str = Depends
         task["id"],
         label,
     )
-    return detail(await fetch_detail(template_id, user_id), user_id, await is_admin(request))
+    return detail(await fetch_detail(template_id, user_id), user_id, await perms(request))
 
 
-async def _editable(template_id: str, request: Request, user_id: str) -> bool:
+async def _editable(template_id: str, request: Request, user_id: str, *, delete: bool = False) -> Perms:
     row = await db.fetch_one("SELECT created_by FROM templates WHERE id=$1", template_id)
     if not row:
         raise HTTPException(status_code=404, detail="範本不存在")
-    admin = await is_admin(request)
-    if not can_edit(row, user_id, admin):
-        raise HTTPException(status_code=403, detail="只有作者或管理員可以修改")
-    return admin
+    p = await perms(request)
+    if delete and not can_delete(row, user_id, p):
+        raise HTTPException(status_code=403, detail="只有作者或管理員可以刪除")
+    if not delete and not can_edit(row, user_id, p):
+        raise HTTPException(status_code=403, detail="只有作者、範本編輯者或管理員可以修改")
+    return p
 
 
 @router.patch("/api/templates/{template_id}")
@@ -371,7 +392,7 @@ async def delete_templates(ids: list[str]) -> int:
 
 @router.delete("/api/templates/{template_id}")
 async def delete_template(template_id: str, request: Request, user_id: str = Depends(auth.require_user)):
-    await _editable(template_id, request, user_id)
+    await _editable(template_id, request, user_id, delete=True)
     await delete_templates([template_id])
     return {"success": True}
 
@@ -400,7 +421,7 @@ class CategoryPatch(BaseModel):
 
 
 @router.post("/api/admin/templates/{template_id}/image")
-async def replace_image(template_id: str, file: UploadFile = File(...), _: str = Depends(auth.require_admin)):
+async def replace_image(template_id: str, file: UploadFile = File(...), _: str = Depends(auth.require_template_editor)):
     old = await db.fetch_one("SELECT image_url, thumb_url FROM templates WHERE id=$1", template_id)
     if not old:
         raise HTTPException(status_code=404, detail="範本不存在")
@@ -417,7 +438,7 @@ async def replace_image(template_id: str, file: UploadFile = File(...), _: str =
 
 
 @router.post("/api/admin/template-categories")
-async def create_category(body: CategoryBody, _: str = Depends(auth.require_admin)):
+async def create_category(body: CategoryBody, _: str = Depends(auth.require_template_editor)):
     if not _CAT_ID_RE.match(body.id):
         raise HTTPException(status_code=400, detail="分類 id 只能用小寫英數與連字號")
     order = await db.fetch_val("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM template_categories")
@@ -431,7 +452,7 @@ async def create_category(body: CategoryBody, _: str = Depends(auth.require_admi
 
 
 @router.patch("/api/admin/template-categories/{category_id}")
-async def update_category(category_id: str, body: CategoryPatch, _: str = Depends(auth.require_admin)):
+async def update_category(category_id: str, body: CategoryPatch, _: str = Depends(auth.require_template_editor)):
     result = await db.execute(
         """UPDATE template_categories SET name=COALESCE($2,name), sort_order=COALESCE($3,sort_order)
         WHERE id=$1""",
@@ -443,7 +464,7 @@ async def update_category(category_id: str, body: CategoryPatch, _: str = Depend
 
 
 @router.delete("/api/admin/template-categories/{category_id}")
-async def delete_category(category_id: str, _: str = Depends(auth.require_admin)):
+async def delete_category(category_id: str, _: str = Depends(auth.require_template_editor)):
     await db.execute("DELETE FROM template_categories WHERE id=$1", category_id)
     return {"success": True}
 
@@ -495,4 +516,4 @@ async def admin_create_template(
         template_id, title.strip()[:60], categoryId, tags, mode, promptEn, promptZh, image_url, thumb_url,
         modelLabel or image_registry.model_family(f"{promptEn} {promptZh}"),
     )
-    return detail(await fetch_detail(template_id, ""), "", True)
+    return detail(await fetch_detail(template_id, ""), "", Perms(editor=True, admin=True))

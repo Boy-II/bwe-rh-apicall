@@ -35,6 +35,7 @@ class TemplatesBase(PostgresMixin, unittest.IsolatedAsyncioTestCase):
         self.app.include_router(templates.router)
         self.app.dependency_overrides[auth.require_user] = lambda: self.user
         self.app.dependency_overrides[auth.require_admin] = lambda: "admin"
+        self.app.dependency_overrides[auth.require_template_editor] = lambda: "editor"
         p = patch.object(templates.auth, "is_admin_token_valid", AsyncMock(side_effect=lambda t: self.admin))
         p.start()
         self.addCleanup(p.stop)
@@ -337,3 +338,42 @@ class TemplateManageTests(TemplatesBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TemplateEditorRoleTests(TemplatesBase):
+    """範本編輯者：可管理分類與編輯任何範本，但不能刪除他人範本或使用其他管理功能。"""
+
+    role = "editor"
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        for dep in (auth.require_admin, auth.require_template_editor):
+            self.app.dependency_overrides.pop(dep, None)
+        p = patch.object(auth, "authenticated_user", AsyncMock(side_effect=lambda r: {"id": self.user, "role": self.role}))
+        p.start()
+        self.addCleanup(p.stop)
+
+    async def test_editor_can_edit_any_template_and_manage_categories(self):
+        await add_template("theirs", created_by="u2")
+        items = (await self.client.get("/api/templates")).json()["items"]
+        self.assertEqual((items[0]["canEdit"], items[0]["canDelete"]), (True, False))
+        res = await self.client.patch("/api/templates/theirs", json={"title": "改"})
+        self.assertEqual(res.status_code, 200, res.text)
+        res = await self.client.post("/api/admin/template-categories", json={"id": "food", "name": "食品"})
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual((await self.client.patch("/api/admin/template-categories/food", json={"name": "餐"})).status_code, 200)
+        self.assertEqual((await self.client.delete("/api/admin/template-categories/food")).status_code, 200)
+
+    async def test_editor_cannot_delete_or_use_admin_only_endpoints(self):
+        await add_template("theirs", created_by="u2")
+        self.assertEqual((await self.client.delete("/api/templates/theirs")).status_code, 403)
+        res = await self.client.post("/api/admin/templates/batch-delete", json={"ids": ["theirs"]})
+        self.assertEqual(res.status_code, 401)
+        self.assertEqual(await db.fetch_val("SELECT COUNT(*) FROM templates"), 1)
+
+    async def test_plain_user_cannot_edit_others_or_manage_categories(self):
+        self.role = "user"
+        await add_template("theirs", created_by="u2")
+        self.assertEqual((await self.client.patch("/api/templates/theirs", json={"title": "x"})).status_code, 403)
+        res = await self.client.post("/api/admin/template-categories", json={"id": "food", "name": "食品"})
+        self.assertEqual(res.status_code, 403)

@@ -20,6 +20,7 @@ def _profile(user: dict) -> dict:
         "name": user.get("name", ""),
         "email": user.get("email", ""),
         "division": user.get("division", ""),
+        "role": user.get("role") or "user",
     }
 
 
@@ -56,6 +57,7 @@ async def user_login(req: UserLoginRequest, request: Request):
             "name": "管理員",
             "email": "",
             "division": "",
+            "role": "admin",
             "adminToken": await auth.issue_admin_token(),
         }
     user = await db.fetch_one(

@@ -29,12 +29,15 @@ export interface SessionUser {
   email?: string;
   division?: string;
   isAdmin: boolean;
+  /** 範本編輯者（或管理員）：可管理分類、編輯任何範本 */
+  canEditTemplates?: boolean;
 }
 
 export interface LoginResponse {
   token: string;
   username: string;
   adminToken?: string;
+  role?: string;
   name?: string;
   email?: string;
   division?: string;
@@ -42,6 +45,7 @@ export interface LoginResponse {
 
 export interface VerifyResponse {
   valid: boolean;
+  role?: string;
   username?: string;
   name?: string;
   email?: string;
@@ -296,6 +300,7 @@ export interface TemplateSummary {
   imageUrl: string;
   favorited: boolean;
   canEdit: boolean;
+  canDelete?: boolean;
   modelLabel: ModelLabel;
 }
 export interface TemplateDetail extends TemplateSummary {

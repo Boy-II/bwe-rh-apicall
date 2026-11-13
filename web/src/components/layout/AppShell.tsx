@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useAuth, isAdmin } from '@/lib/auth-store';
+import { useAuth, isAdmin, canEditTemplates } from '@/lib/auth-store';
 import { ThemeToggle } from '../ThemeToggle';
 import { BalancePill } from '../BalancePill';
 import { UserManageModal } from '../UserManageModal';
@@ -41,6 +41,7 @@ interface Props {
 export function AppShell({ active, onNavigate, onOpenModels, onOpenCategories, children }: Props) {
   const { user, logout } = useAuth();
   const admin = isAdmin(user);
+  const editor = !admin && canEditTemplates(user);
   const [open, setOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -87,11 +88,18 @@ export function AppShell({ active, onNavigate, onOpenModels, onOpenCategories, c
           </div>
         </div>
       )}
+      {editor && (
+        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
+          <div className="px-3 pb-1 text-xs text-muted-foreground">範本管理</div>
+          {item('分類管理', <Tags className="size-4" />, () => onOpenCategories?.())}
+        </div>
+      )}
       <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
         <div className="flex items-center justify-between px-3">
           <span className="truncate text-sm text-muted-foreground">
             {user?.name || user?.username}
             {admin && <span className="text-primary">（管理員）</span>}
+            {editor && <span className="text-primary">（範本編輯）</span>}
           </span>
           <ThemeToggle />
         </div>

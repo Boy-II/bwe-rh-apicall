@@ -440,7 +440,7 @@ export const adminTemplates = {
     fd.append('file', file);
     return request<{ imageUrl: string; thumbUrl: string }>(
       `/api/admin/templates/${encodeURIComponent(id)}/image`,
-      { method: 'POST', admin: true, body: fd },
+      { method: 'POST', admin: true, user: true, body: fd },
     );
   },
   batchDelete: (ids: string[]) =>
@@ -453,18 +453,21 @@ export const adminTemplates = {
     request<{ id: string }>('/api/admin/template-categories', {
       method: 'POST',
       admin: true,
+      user: true,
       body: json({ id, name }),
     }),
   updateCategory: (id: string, body: { name?: string; sortOrder?: number }) =>
     request<{ success: boolean }>(`/api/admin/template-categories/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       admin: true,
+      user: true,
       body: json(body),
     }),
   deleteCategory: (id: string) =>
     request<{ success: boolean }>(`/api/admin/template-categories/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       admin: true,
+      user: true,
     }),
 };
 

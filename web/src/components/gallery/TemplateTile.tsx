@@ -84,7 +84,7 @@ export function TemplateTile({ t, onOpen, onToggleFavorite, onEdit, onDelete, se
                     <Pencil className="size-3.5" /> 編輯
                   </button>
                 )}
-                {onDelete && (
+                {onDelete && (t.canDelete ?? t.canEdit) && (
                   <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-destructive hover:bg-muted" onClick={() => { setMenu(false); onDelete(); }}>
                     <Trash2 className="size-3.5" /> 刪除
                   </button>

@@ -43,6 +43,7 @@ export const useAuth = create<AuthState>()(
               email: res.email,
               division: res.division,
               isAdmin: !!res.adminToken,
+              canEditTemplates: !!res.adminToken || isEditorRole(res.role),
             },
             userToken: res.token,
             adminToken: res.adminToken ?? null,
@@ -111,6 +112,7 @@ export const useAuth = create<AuthState>()(
               email: verify.email,
               division: verify.division,
               isAdmin: stillAdmin,
+              canEditTemplates: stillAdmin || isEditorRole(verify.role),
             },
           });
         } catch {
@@ -143,4 +145,12 @@ export const useAuth = create<AuthState>()(
 
 export function isAdmin(user: SessionUser | null) {
   return !!user?.isAdmin;
+}
+
+function isEditorRole(role?: string) {
+  return role === 'editor' || role === 'admin';
+}
+
+export function canEditTemplates(user: SessionUser | null) {
+  return !!user?.isAdmin || !!user?.canEditTemplates;
 }
