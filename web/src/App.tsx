@@ -13,6 +13,7 @@ import { ModelRegistryModal } from '@/components/admin/ModelRegistryModal';
 import { CategoryManageModal } from '@/components/admin/CategoryManageModal';
 import { TemplateEditDialog } from '@/components/admin/TemplateEditDialog';
 import { NewTemplatePage } from '@/components/admin/NewTemplatePage';
+import { MediaManagePage } from '@/components/admin/MediaManagePage';
 import type { Card, NodeInfo, TaskHistoryResult } from '@/lib/types';
 
 export interface RerunPrefill {
@@ -34,7 +35,8 @@ export type Route =
   | { kind: 'apps' }
   | { kind: 'task'; card: Card; prefill?: RerunPrefill }
   | { kind: 'history' }
-  | { kind: 'new-template' };
+  | { kind: 'new-template' }
+  | { kind: 'media' };
 
 function App() {
   const user = useAuth((s) => s.user);
@@ -106,6 +108,8 @@ function App() {
           />
         ) : route.kind === 'new-template' ? (
           <NewTemplatePage onCreated={() => setGalleryRefresh((n) => n + 1)} />
+        ) : route.kind === 'media' ? (
+          <MediaManagePage />
         ) : route.kind === 'apps' ? (
           <AppsPage onSelect={(card) => setRoute({ kind: 'task', card })} />
         ) : route.kind === 'history' ? (

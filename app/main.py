@@ -1,5 +1,6 @@
 """FastAPI 應用入口。"""
 
+import asyncio
 import json
 import logging
 import mimetypes
@@ -30,6 +31,7 @@ from app.core import redis_client
 from app.migrations.runner import apply_migrations
 from app.migrations.seed_from_config import run_seed
 from app.routers import (
+    admin_media,
     admin_ai,
     admin_rh,
     auth,
@@ -44,7 +46,7 @@ from app.routers import (
     prompt,
 )
 from app.services.image_registry import seed_image_models
-from app.services import media, openai_images
+from app.services import media, media_retention, openai_images
 from app.services import runninghub
 from app.services.cover_presets import restore_files, apply_cover_presets
 from app.core.paths import ROOT_DIR, COVERS_DIR
@@ -93,9 +95,14 @@ async def lifespan(app: FastAPI):
         config.set_db_setting("jwt_secret", new_secret)
         logger.info("自動生成 jwt_secret 並寫入 settings 表")
 
+    # === 生成圖片保留期清理（啟動時與每 6 小時）===
+    cleanup_task = asyncio.create_task(media_retention.run_forever())
+
     logger.info("啟動完成")
 
     yield
+
+    cleanup_task.cancel()
 
     # === 關閉 ===
     await runninghub.close_client()
@@ -119,6 +126,7 @@ app.include_router(models.router)
 app.include_router(admin_models.router)
 app.include_router(templates.router)
 app.include_router(prompt.router)
+app.include_router(admin_media.router)
 
 
 # ===== 靜態檔案 =====

@@ -433,6 +433,34 @@ export const adminModels = {
     request<{ models: string[] }>('/api/admin/openai-route/models', { method: 'POST', admin: true }),
 };
 
+export interface MediaResultItem {
+  name: string;
+  url: string;
+  size: number;
+  savedAt: string;
+  expiresAt: string;
+  task: { id: string; cardTitle: string; provider: string; userName: string; createdAt: string } | null;
+}
+
+export interface MediaResultPage {
+  items: MediaResultItem[];
+  total: number;
+  totalSize: number;
+  retentionDays: number;
+  nextOffset: number | null;
+}
+
+export const adminMedia = {
+  list: (offset = 0, limit = 60) =>
+    request<MediaResultPage>(`/api/admin/media/results?offset=${offset}&limit=${limit}`, { admin: true }),
+  remove: (names: string[]) =>
+    request<{ success: boolean; deleted: number }>('/api/admin/media/results/delete', {
+      method: 'POST',
+      admin: true,
+      body: json({ names }),
+    }),
+};
+
 export const adminTemplates = {
   create: (body: { file: File; promptZh: string; promptEn: string; title: string; categoryId: string; mode: string; modelLabel: string }) => {
     const fd = new FormData();
@@ -615,6 +643,7 @@ export const api = {
   prompt,
   adminModels,
   adminTemplates,
+  adminMedia,
 };
 export { ApiError };
 export default api;

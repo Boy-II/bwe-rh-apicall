@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import {
+  HardDrive,
   BookImage,
   Boxes,
   Cpu,
@@ -20,7 +21,7 @@ import { BalancePill } from '../BalancePill';
 import { UserManageModal } from '../UserManageModal';
 import { AiConfigModal } from '../AiConfigModal';
 
-export type NavKey = 'gallery' | 'favorites' | 'generate' | 'apps' | 'history' | 'new-template';
+export type NavKey = 'gallery' | 'favorites' | 'generate' | 'apps' | 'history' | 'new-template' | 'media';
 
 const NAV: { key: NavKey; label: string; icon: ReactNode }[] = [
   { key: 'gallery', label: '提示詞庫', icon: <BookImage className="size-4" /> },
@@ -81,6 +82,7 @@ export function AppShell({ active, onNavigate, onOpenModels, onOpenCategories, c
           {item('新增範本', <ImagePlus className="size-4" />, () => onNavigate('new-template'), active === 'new-template')}
           {item('模型管理', <Cpu className="size-4" />, () => onOpenModels?.())}
           {item('分類管理', <Tags className="size-4" />, () => onOpenCategories?.())}
+          {item('圖片管理', <HardDrive className="size-4" />, () => onNavigate('media'), active === 'media')}
           {item('用戶', <Users className="size-4" />, () => setUsersOpen(true))}
           {item('AI 設定', <Settings className="size-4" />, () => setAiOpen(true))}
           <div className="px-3 pt-1">
